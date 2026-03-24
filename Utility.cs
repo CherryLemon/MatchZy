@@ -787,7 +787,7 @@ namespace MatchZy
             }
             if (showCreditsOnMatchStart.Value)
             {
-                Server.PrintToChatAll($"{chatPrefix} {ChatColors.Green}MatchZy{ChatColors.Default} Plugin by {ChatColors.Green}WD-{ChatColors.Default}");
+                Server.PrintToChatAll($"{chatPrefix} {ChatColors.Green}THUCS{ChatColors.Default} 对战服务器已就绪");
             }
             if (matchStartMessage.Value.Trim() != "" && matchStartMessage.Value.Trim() != "\"\"")
             {
@@ -1301,7 +1301,7 @@ namespace MatchZy
             ExecUnpracCommands();
             ResetMatch();
             RemoveSpawnBeams();
-            Server.PrintToChatAll($"{chatPrefix} Match mode loaded!");
+            Server.PrintToChatAll($"{chatPrefix} THUCS 比赛模式已加载!");
         }
 
         private void ExecLiveCFG()
