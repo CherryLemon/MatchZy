@@ -6,6 +6,83 @@ using CounterStrikeSharp.API.Modules.Utils;
 namespace MatchZy;
 public partial class MatchZy
 {
+    private static int GetConfiguredPlayerCount(Newtonsoft.Json.Linq.JToken? teamPlayers)
+    {
+        return teamPlayers?.Children().Count() ?? 0;
+    }
+
+    private int GetDesiredLocalFillBotCount()
+    {
+        return Math.Max(0, GetConfiguredPlayerCount(matchzyTeam1.teamPlayers) + GetConfiguredPlayerCount(matchzyTeam2.teamPlayers) - GetRealPlayersCount());
+    }
+
+    private bool ShouldPreserveLocalFillBots()
+    {
+        int configuredTeam1 = GetConfiguredPlayerCount(matchzyTeam1.teamPlayers);
+        int configuredTeam2 = GetConfiguredPlayerCount(matchzyTeam2.teamPlayers);
+        int configuredTotalPlayers = configuredTeam1 + configuredTeam2;
+
+        return isMatchSetup
+            && (
+                localFillBotsOnFirstConnect
+                || (
+                    matchConfig.PlayersPerTeam == 1
+                    && matchConfig.MinPlayersToReady == 1
+                    && configuredTotalPlayers > matchConfig.PlayersPerTeam * 2
+                )
+            );
+    }
+
+    private bool ShouldSeedLocalFillBotsForWarmup()
+    {
+        return readyAvailable
+            && !matchStarted
+            && ShouldPreserveLocalFillBots();
+    }
+
+    private void RestoreLocalFillBotsForMatchPhase(string phaseName)
+    {
+        Log($"[RestoreLocalFillBotsForMatchPhase] phase={phaseName} localFillBotsOnFirstConnect={localFillBotsOnFirstConnect} isMatchSetup={isMatchSetup} playersPerTeam={matchConfig.PlayersPerTeam} minPlayersToReady={matchConfig.MinPlayersToReady}");
+        if (!ShouldPreserveLocalFillBots()) return;
+
+        int desiredBots = GetDesiredLocalFillBotCount();
+        if (desiredBots <= 0)
+        {
+            Log($"[RestoreLocalFillBotsForMatchPhase] phase={phaseName} desiredBots={desiredBots} realPlayers={GetRealPlayersCount()} configuredTeam1={GetConfiguredPlayerCount(matchzyTeam1.teamPlayers)} configuredTeam2={GetConfiguredPlayerCount(matchzyTeam2.teamPlayers)}");
+            return;
+        }
+
+        Log($"[RestoreLocalFillBotsForMatchPhase] phase={phaseName} desiredBots={desiredBots} realPlayers={GetRealPlayersCount()} configuredTeam1={GetConfiguredPlayerCount(matchzyTeam1.teamPlayers)} configuredTeam2={GetConfiguredPlayerCount(matchzyTeam2.teamPlayers)}");
+
+        Server.ExecuteCommand("mp_autoteambalance 0");
+        Server.ExecuteCommand("mp_limitteams 0");
+        Server.ExecuteCommand("bot_join_after_player 0");
+        Server.ExecuteCommand("bot_quota_mode normal");
+        Server.ExecuteCommand($"bot_quota {desiredBots}");
+    }
+
+    private void SeedLocalFillBotsForWarmup()
+    {
+        Log($"[SeedLocalFillBotsForWarmup] localFillBotsOnFirstConnect={localFillBotsOnFirstConnect} readyAvailable={readyAvailable} matchStarted={matchStarted} isMatchSetup={isMatchSetup} playersPerTeam={matchConfig.PlayersPerTeam} minPlayersToReady={matchConfig.MinPlayersToReady}");
+        if (!ShouldSeedLocalFillBotsForWarmup()) return;
+
+        int desiredBots = GetDesiredLocalFillBotCount();
+        if (desiredBots <= 0)
+        {
+            Log($"[SeedLocalFillBotsForWarmup] desiredBots={desiredBots} realPlayers={GetRealPlayersCount()} configuredTeam1={GetConfiguredPlayerCount(matchzyTeam1.teamPlayers)} configuredTeam2={GetConfiguredPlayerCount(matchzyTeam2.teamPlayers)}");
+            return;
+        }
+
+        Log($"[SeedLocalFillBotsForWarmup] desiredBots={desiredBots} realPlayers={GetRealPlayersCount()} configuredTeam1={GetConfiguredPlayerCount(matchzyTeam1.teamPlayers)} configuredTeam2={GetConfiguredPlayerCount(matchzyTeam2.teamPlayers)}");
+
+        Server.ExecuteCommand("bot_kick");
+        Server.ExecuteCommand("mp_autoteambalance 0");
+        Server.ExecuteCommand("mp_limitteams 0");
+        Server.ExecuteCommand("bot_join_after_player 0");
+        Server.ExecuteCommand("bot_quota_mode normal");
+        Server.ExecuteCommand($"bot_quota {desiredBots}");
+    }
+
     public HookResult EventPlayerConnectFullHandler(EventPlayerConnectFull @event, GameEventInfo info)
     {
         try
@@ -16,7 +93,7 @@ public partial class MatchZy
             Log($"[FULL CONNECT] Player ID: {player!.UserId}, Name: {player.PlayerName} has connected!");
 
             // Handling whitelisted players
-            if (!player.IsBot || !player.IsHLTV)
+            if (!player.IsBot && !player.IsHLTV)
             {
                 var steamId = player.SteamID;
 
@@ -61,6 +138,7 @@ public partial class MatchZy
                     Log($"[FULL CONNECT] First player has connected, starting warmup!");
                     ExecUnpracCommands();
                     AutoStart();
+                    AddTimer(1.0f, SeedLocalFillBotsForWarmup);
                 }
             }
             return HookResult.Continue;

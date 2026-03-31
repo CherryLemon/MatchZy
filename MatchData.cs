@@ -124,6 +124,9 @@ public class PlayerStats
     [JsonPropertyName("kast")]
     public int Kast { get; set; }
 
+    [JsonPropertyName("rws")]
+    public float Rws { get; set; }
+
     [JsonPropertyName("score")]
     public int Score { get; set; }
 

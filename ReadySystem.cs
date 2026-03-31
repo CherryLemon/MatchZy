@@ -1,3 +1,4 @@
+using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Attributes.Registration;
 using CounterStrikeSharp.API.Modules.Commands;
@@ -31,9 +32,10 @@ public partial class MatchZy
 
         int minPlayers = GetPlayersPerTeam(team);
         int minReady = GetTeamMinReady(team);
+        int botCount = GetTeamBotCount(team);
         (int playerCount, int readyCount) = GetTeamPlayerCount(team, false);
 
-        Log($"[IsTeamReady] team: {team} minPlayers:{minPlayers} minReady:{minReady} playerCount:{playerCount} readyCount:{readyCount}");
+        Log($"[IsTeamReady] team: {team} minPlayers:{minPlayers} minReady:{minReady} playerCount:{playerCount} readyCount:{readyCount} botCount:{botCount}");
 
         if (team == (int)CsTeam.Spectator && minReady == 0)
         {
@@ -42,8 +44,9 @@ public partial class MatchZy
 
         if (readyAvailable && playerCount == 0)
         {
-            // We cannot ready for veto with no players, regardless of force status or min_players_to_ready.
-            return false;
+            // In local bot-fill flows there may be no real users on one side yet.
+            // Treat bot-only teams as ready so one real player can still .ready the match live.
+            return botCount > 0;
         }
 
         if (playerCount == readyCount && playerCount >= minPlayers)
@@ -57,6 +60,21 @@ public partial class MatchZy
         }
 
         return false;
+    }
+
+    public int GetTeamBotCount(int team)
+    {
+        int botCount = 0;
+        foreach (var player in Utilities.GetPlayers())
+        {
+            if (!player.IsValid) continue;
+            if (player.IsHLTV || !player.IsBot) continue;
+            if (player.TeamNum == team)
+            {
+                botCount++;
+            }
+        }
+        return botCount;
     }
 
     public int GetPlayersPerTeam(int team)
@@ -80,6 +98,7 @@ public partial class MatchZy
         foreach (var key in playerData.Keys)
         {
             if (!playerData[key].IsValid) continue;
+            if (playerData[key].IsHLTV || playerData[key].IsBot) continue;
             if (playerData[key].TeamNum == team) {
                 playerCount++;
                 if (playerReadyStatus[key] == true) readyCount++;

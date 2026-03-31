@@ -297,6 +297,8 @@ namespace MatchZy
             isMatchLive = true;
             readyAvailable = false;
             isKnifeRound = false;
+            InitExtendedStats();
+            InitMatchupTracking();
         }
 
         private void SetupLiveFlagsAndCfg()
@@ -310,6 +312,7 @@ namespace MatchZy
                 HandlePlayoutConfig();
                 ExecuteChangedConvars();
             });
+            AddTimer(0.5f, () => RestoreLocalFillBotsForMatchPhase("live"));
         }
 
         private void StartLive()
@@ -400,6 +403,8 @@ namespace MatchZy
 
                 isRoundRestorePending = false;
                 playerHasTakenDamage = false;
+                InitExtendedStats();
+                InitMatchupTracking();
 
                 // Unready all players
                 foreach (var key in playerReadyStatus.Keys)
@@ -869,13 +874,22 @@ namespace MatchZy
 
             string statsPath = Server.GameDirectory + "/csgo/MatchZy_Stats/" + liveMatchId.ToString();
 
+            int currentRoundNumber = GetRoundNumer();
+            int winningTeamNum = teamSides[t1score > t2score ? matchzyTeam1 : matchzyTeam2] == "CT" ? 3 : 2;
+
+            ProcessRoundEndExtendedStatsIfNeeded(winningTeamNum, currentRoundNumber);
+
+            // Collect player stats so map_result carries per-player data (used by THUCS webhook)
+            (Dictionary<ulong, Dictionary<string, object>> _, List<StatsPlayer> mapEndStatsTeam1, List<StatsPlayer> mapEndStatsTeam2) = GetPlayerStatsDict();
+
             var mapResultEvent = new MapResultEvent
             {
                 MatchId = liveMatchId,
                 MapNumber = currentMapNumber,
                 Winner = new Winner(t1score > t2score && reverseTeamSides["CT"] == matchzyTeam1 ? "3" : "2", t1score > t2score ? "team1" : "team2"),
-                StatsTeam1 = new MatchZyStatsTeam(matchzyTeam1.id, matchzyTeam1.teamName, team1SeriesScore, t1score, 0, 0, new List<StatsPlayer>()),
-                StatsTeam2 = new MatchZyStatsTeam(matchzyTeam2.id, matchzyTeam2.teamName, team2SeriesScore, t2score, 0, 0, new List<StatsPlayer>())
+                StatsTeam1 = new MatchZyStatsTeam(matchzyTeam1.id, matchzyTeam1.teamName, team1SeriesScore, t1score, 0, 0, mapEndStatsTeam1),
+                StatsTeam2 = new MatchZyStatsTeam(matchzyTeam2.id, matchzyTeam2.teamName, team2SeriesScore, t2score, 0, 0, mapEndStatsTeam2),
+                Matchups = GetMatchupDataForWebhook()
             };
 
             Task.Run(async () =>
@@ -1050,6 +1064,11 @@ namespace MatchZy
 
                     ShowDamageInfo();
 
+                    int roundNumber = GetRoundNumer();
+
+                    // Process extended stats before serializing round_end payloads so KAST/RWS stay current.
+                    ProcessRoundEndExtendedStatsIfNeeded(@event.Winner, roundNumber);
+
                     (Dictionary<ulong, Dictionary<string, object>> playerStatsDictionary, List<StatsPlayer> playerStatsListTeam1, List<StatsPlayer> playerStatsListTeam2) = GetPlayerStatsDict();
 
                     int currentMapNumber = matchConfig.CurrentMapNumber;
@@ -1062,7 +1081,7 @@ namespace MatchZy
                     {
                         MatchId = liveMatchId,
                         MapNumber = matchConfig.CurrentMapNumber,
-                        RoundNumber = GetRoundNumer(),
+                        RoundNumber = roundNumber,
                         Reason = @event.Reason,
                         RoundTime = 0,
                         Winner = winner,
@@ -1322,7 +1341,7 @@ namespace MatchZy
             {
                 Log($"[StartLive] Starting Live! Executing Live CFG from {cfgPath}");
                 Server.ExecuteCommand($"exec {cfgPath}");
-                Server.ExecuteCommand("mp_restartgame 1;mp_warmup_end;");
+                Server.ExecuteCommand("mp_restartgame 3;mp_warmup_end;");
             }
             else
             {
@@ -1668,14 +1687,17 @@ namespace MatchZy
 
                     playerStatsDictionary.Add(steamid64, stats);
 
+                    // Get extended stats computed by ExtendedStats.cs
+                    var (kastPct, rws, flashAssists, tradeKills, bombPlants, bombDefuses, kills1) =
+                        GetExtendedStatsForPlayer(steamid64, roundsPlayed);
+
                     // Populate PlayerStats instance
-                    // Todo: Implement stats which are marked as 0 for now
                     PlayerStats playerStatsInstance = new()
                     {
                         Kills = playerStats.Kills,
                         Deaths = playerStats.Deaths,
                         Assists = playerStats.Assists,
-                        FlashAssists = 0,
+                        FlashAssists = flashAssists,
                         TeamKills = 0,
                         Suicides = 0,
                         Damage = playerStats.Damage,
@@ -1685,9 +1707,9 @@ namespace MatchZy
                         KnifeKills = 0,
                         HeadshotKills = playerStats.HeadShotKills,
                         RoundsPlayed = roundsPlayed,
-                        BombDefuses = 0,
-                        BombPlants = 0,
-                        Kills1 = 0,
+                        BombDefuses = bombDefuses,
+                        BombPlants = bombPlants,
+                        Kills1 = kills1,
                         Kills2 = playerStats.Enemy2Ks,
                         Kills3 = playerStats.Enemy3Ks,
                         Kills4 = playerStats.Enemy4Ks,
@@ -1701,10 +1723,11 @@ namespace MatchZy
                         FirstKillsCT = 0,
                         FirstDeathsT = 0,
                         FirstDeathsCT = 0,
-                        TradeKills = 0,
-                        Kast = 0,
+                        TradeKills = tradeKills,
+                        Kast = kastPct,
                         Score = player.Score,
                         Mvps = player.MVPs,
+                        Rws = (float)Math.Round(rws, 2),
                     };
 
                     StatsPlayer statsPlayer = new()

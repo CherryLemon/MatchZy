@@ -332,9 +332,17 @@ namespace MatchZy
             RegisterEventHandler<EventPlayerDeath>((@event, info) => {
                 // Setting money back to 16000 when a player dies in warmup
                 var player = @event.Userid;
-                if (!isWarmup) return HookResult.Continue;
-                if (!IsPlayerValid(player)) return HookResult.Continue;
-                if (player!.InGameMoneyServices != null) player.InGameMoneyServices.Account = 16000;
+                if (isWarmup)
+                {
+                    if (IsPlayerValid(player) && player!.InGameMoneyServices != null)
+                        player.InGameMoneyServices.Account = 16000;
+                    return HookResult.Continue;
+                }
+                // Track kill for extended stats (KAST, trade kills, flash assists)
+                TrackKill(@event);
+                // Track per-player matchup kill (must be after EventPlayerHurt so per-round damage is current)
+                if (IsPlayerValid(@event.Attacker) && IsPlayerValid(@event.Userid) && @event.Attacker != @event.Userid)
+                    TrackMatchupKill(@event.Attacker!, @event.Userid!);
                 return HookResult.Continue;
             });
 
@@ -360,6 +368,10 @@ namespace MatchZy
                     int targetId = (int)victim.UserId!;
                     UpdatePlayerDamageInfo(@event, targetId);
                     if (attacker != victim) playerHasTakenDamage = true;
+                    // Track damage for RWS calculation
+                    TrackDamage((int)attacker.UserId!, @event.DmgHealth);
+                    // Track per-player matchup damage
+                    TrackMatchupDamage(attacker, victim, @event.DmgHealth);
                 }
 
 				return HookResult.Continue;
@@ -518,6 +530,15 @@ namespace MatchZy
             {
                 CCSPlayerController? player = @event.Userid;
                 CCSPlayerController? attacker = @event.Attacker;
+
+                // Track blind for flash assists (works in match and practice)
+                if (IsPlayerValid(player) && IsPlayerValid(attacker) &&
+                    player!.UserId.HasValue && attacker!.UserId.HasValue &&
+                    player.TeamNum != attacker.TeamNum)
+                {
+                    TrackBlind((int)player.UserId, (int)attacker.UserId, @event.BlindDuration);
+                }
+
                 if (!isPractice) return HookResult.Continue;
 
                 if (!IsPlayerValid(player) || !IsPlayerValid(attacker)) return HookResult.Continue;
@@ -533,6 +554,17 @@ namespace MatchZy
                     Server.NextFrame(() => KillFlashEffect(player));
                 }
 
+                return HookResult.Continue;
+            });
+
+            RegisterEventHandler<EventBombPlanted>((@event, info) =>
+            {
+                if (IsPlayerValid(@event.Userid)) TrackBombPlant(@event.Userid!);
+                return HookResult.Continue;
+            });
+            RegisterEventHandler<EventBombDefused>((@event, info) =>
+            {
+                if (IsPlayerValid(@event.Userid)) TrackBombDefuse(@event.Userid!);
                 return HookResult.Continue;
             });
 

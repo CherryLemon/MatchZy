@@ -65,7 +65,7 @@ namespace MatchZy
         public void OnPlayerReady(CCSPlayerController? player, CommandInfo? command)
         {
             if (player == null) return;
-            Log($"[!ready command] Sent by: {player.UserId} readyAvailable: {readyAvailable} matchStarted: {matchStarted}");
+            Log($"[!ready command] Sent by: {player.UserId} readyAvailable: {readyAvailable} matchStarted: {matchStarted} localFillBotsOnFirstConnect: {localFillBotsOnFirstConnect}");
             if (readyAvailable && !matchStarted)
             {
                 if (player.UserId.HasValue)
@@ -84,6 +84,15 @@ namespace MatchZy
                         playerReadyStatus[player.UserId.Value] = true;
                         // player.PrintToChat($"{chatPrefix} {Localizer["matchzy.youareready"]}");
                         PrintToPlayerChat(player, Localizer["matchzy.ready.markedready"]);
+                    }
+                    if (ShouldSeedLocalFillBotsForWarmup())
+                    {
+                        SeedLocalFillBotsForWarmup();
+                        AddTimer(1.5f, () =>
+                        {
+                            CheckLiveRequired();
+                            SendUnreadyPlayersMessage();
+                        });
                     }
                     CheckLiveRequired();
                     HandleClanTags();

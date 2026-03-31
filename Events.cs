@@ -176,6 +176,9 @@ public class MapResultEvent : MatchZyMapEvent
     [JsonPropertyName("team2")]
     public required MatchZyStatsTeam StatsTeam2 { get; init; }
 
+    [JsonPropertyName("matchups")]
+    public List<MatchupData>? Matchups { get; set; }
+
     public MapResultEvent() : base("map_result")
     {
     }

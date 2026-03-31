@@ -30,6 +30,8 @@ namespace MatchZy
 
         public FakeConVar<string> matchStartMessage = new("matchzy_match_start_message", "Message to show when the match starts. Use $$$ to break message into multiple lines. Set to \"\" to disable.", "");
 
+        public bool localFillBotsOnFirstConnect = false;
+
         [ConsoleCommand("matchzy_whitelist_enabled_default", "Whether Whitelist is enabled by default or not. Default value: false")]
         public void MatchZyWLConvar(CCSPlayerController? player, CommandInfo command)
         {
@@ -37,6 +39,16 @@ namespace MatchZy
             string args = command.ArgString;
 
             isWhitelistRequired = bool.TryParse(args, out bool isWhitelistRequiredValue) ? isWhitelistRequiredValue : args != "0" && isWhitelistRequired;
+        }
+
+        [ConsoleCommand("matchzy_local_fill_bots_on_first_connect", "Whether local testing should auto-fill server bots after the first real player connects. Default value: false")]
+        public void MatchZyLocalFillBotsOnFirstConnect(CCSPlayerController? player, CommandInfo command)
+        {
+            if (player != null) return;
+            string args = command.ArgString.Trim().Trim('"');
+
+            localFillBotsOnFirstConnect = bool.TryParse(args, out bool enabledValue) ? enabledValue : args != "0" && localFillBotsOnFirstConnect;
+            Log($"[MatchZyLocalFillBotsOnFirstConnect] localFillBotsOnFirstConnect={localFillBotsOnFirstConnect} raw={command.ArgString}");
         }
         
         [ConsoleCommand("matchzy_knife_enabled_default", "Whether knife round is enabled by default or not. Default value: true")]
