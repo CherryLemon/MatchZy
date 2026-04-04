@@ -100,6 +100,13 @@ public partial class MatchZy
                 bool kicked = HandlePlayerWhitelist(player, steamId.ToString());
                 if (kicked) return HookResult.Continue;
 
+                if (isPostMatchShutdownPending || isPostMatchServerLocked)
+                {
+                    Log($"[EventPlayerConnectFull] KICKING PLAYER STEAMID: {steamId}, Name: {player.PlayerName} (WAITING FOR NEXT MATCH CONFIG)");
+                    KickPlayer(player);
+                    return HookResult.Continue;
+                }
+
                 if (isMatchSetup || matchModeOnly)
                 {
                     CsTeam team = GetPlayerTeam(player);

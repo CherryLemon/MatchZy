@@ -23,6 +23,17 @@ namespace MatchZy
 
         public string loadedConfigFile = "";
 
+        private bool CanReplacePostMatchSetup()
+        {
+            return isMatchSetup && !isMatchLive && (isPostMatchShutdownPending || isPostMatchServerLocked);
+        }
+
+        private void PrepareServerForNextMatchLoad()
+        {
+            ClearPostMatchShutdownState();
+            ResetMatch(false);
+        }
+
         public Team matchzyTeam1 = new() {
             teamName = "COUNTER-TERRORISTS"
         };
@@ -51,10 +62,17 @@ namespace MatchZy
                 if (player != null) return;
                 if (isMatchSetup)
                 {
+                    if (CanReplacePostMatchSetup())
+                    {
+                        Log($"[LoadMatch] Replacing completed match setup with new config request.");
+                    }
+                    else
+                    {
                     // command.ReplyToCommand($"[LoadMatch] A match is already setup with id: {liveMatchId}, cannot load a new match!");
                     ReplyToUserCommand(player, Localizer["matchzy.mm.matchisalreadysetup", liveMatchId]);
                     Log($"[LoadMatch] A match is already setup with id: {liveMatchId}, cannot load a new match!");
                     return;
+                    }
                 }
                 string fileName = command.ArgString;
                 string filePath = Path.Join(Server.GameDirectory + "/csgo", fileName);
@@ -89,10 +107,17 @@ namespace MatchZy
             if (player != null) return;
             if (isMatchSetup)
             {
+                if (CanReplacePostMatchSetup())
+                {
+                    Log($"[LoadMatchDataCommand] Replacing completed match setup with new URL config request.");
+                }
+                else
+                {
                 // command.ReplyToCommand($"[LoadMatchDataCommand] A match is already setup with id: {liveMatchId}, cannot load a new match!");
                 ReplyToUserCommand(player, Localizer["matchzy.mm.get5matchisalreadysetup", liveMatchId]);
                 Log($"[LoadMatchDataCommand] A match is already setup with id: {liveMatchId}, cannot load a new match!");
                 return;
+                }
             }
             string url = command.ArgByIndex(1);
 
@@ -264,6 +289,18 @@ namespace MatchZy
                 return false;
             }
 
+            if (isMatchSetup && !CanReplacePostMatchSetup())
+            {
+                Log($"[LoadMatchFromJSON] A live match is already setup with id: {liveMatchId}, cannot load a new match!");
+                return false;
+            }
+
+            if (CanReplacePostMatchSetup())
+            {
+                Log($"[LoadMatchFromJSON] Clearing post-match shutdown state and preparing for next match load.");
+                PrepareServerForNextMatchLoad();
+            }
+
             if(jsonDataObject["matchid"] != null)
             {
                 liveMatchId = (long)jsonDataObject["matchid"]!;
@@ -353,6 +390,7 @@ namespace MatchZy
                 isPreVeto = true;
             } 
 
+            ClearPostMatchShutdownState();
             readyAvailable = true;
 
             // This is done before starting warmup so that cvars like get5_remote_log_url are set properly to send the events
@@ -579,6 +617,7 @@ namespace MatchZy
         {
             long matchId = liveMatchId;
             (int team1Score, int team2Score) = (matchzyTeam1.seriesScore, matchzyTeam2.seriesScore);
+            int shutdownDelay = Math.Max(restartDelay, PostMatchShutdownDelaySeconds);
             if (winnerName == null)
             {
                 PrintToAllChat($"{ChatColors.Green}{matchzyTeam1.teamName}{ChatColors.Default} and {ChatColors.Green}{matchzyTeam2.teamName}{ChatColors.Default} have tied the match");
@@ -596,7 +635,7 @@ namespace MatchZy
                 Winner = new Winner(t1score > t2score && reverseTeamSides["CT"] == matchzyTeam1 ? "3" : "2", winnerTeam),
                 Team1SeriesScore = team1Score,
                 Team2SeriesScore = team2Score,
-                TimeUntilRestore = 10,
+                TimeUntilRestore = shutdownDelay,
             };
 
             Task.Run(async () => {
@@ -608,9 +647,7 @@ namespace MatchZy
 
             if (resetCvarsOnSeriesEnd) ResetChangedConvars();
             isMatchLive = false;
-            AddTimer(restartDelay, () => {
-                ResetMatch(false);
-            });
+            StartPostMatchShutdown(shutdownDelay);
         }
 
         public void HandlePlayoutConfig()

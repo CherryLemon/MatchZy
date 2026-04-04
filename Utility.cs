@@ -51,6 +51,87 @@ namespace MatchZy
             }
         }
 
+        private void PrintToAllCenter(string message)
+        {
+            var playerEntities = Utilities.FindAllEntitiesByDesignerName<CCSPlayerController>("cs_player_controller");
+            foreach (var player in playerEntities)
+            {
+                if (!IsPlayerValid(player) || player.IsBot || player.IsHLTV) continue;
+                if (player.Connected != PlayerConnectedState.PlayerConnected) continue;
+                player.PrintToCenter(message);
+            }
+        }
+
+        private void StopPostMatchShutdownMessages()
+        {
+            postMatchShutdownMessageTimer?.Kill();
+            postMatchShutdownMessageTimer = null;
+        }
+
+        private void ClearPostMatchShutdownState()
+        {
+            StopPostMatchShutdownMessages();
+            postMatchShutdownLockTimer?.Kill();
+            postMatchShutdownLockTimer = null;
+            isPostMatchShutdownPending = false;
+            isPostMatchServerLocked = false;
+            postMatchShutdownSecondsRemaining = 0;
+        }
+
+        private bool ShouldBroadcastPostMatchShutdownChat(int secondsRemaining)
+        {
+            return secondsRemaining == PostMatchShutdownDelaySeconds || secondsRemaining == 20 || secondsRemaining <= 10;
+        }
+
+        private void BroadcastPostMatchShutdownMessage(int secondsRemaining, bool forceChat = false)
+        {
+            string message = Localizer["matchzy.utility.postmatchshutdown", secondsRemaining];
+            if (forceChat || ShouldBroadcastPostMatchShutdownChat(secondsRemaining))
+            {
+                PrintToAllChat(message);
+            }
+            PrintToAllCenter(message);
+        }
+
+        private void StartPostMatchShutdown(int shutdownDelay)
+        {
+            int effectiveDelay = Math.Max(PostMatchShutdownDelaySeconds, shutdownDelay);
+
+            ClearPostMatchShutdownState();
+            isPostMatchShutdownPending = true;
+            postMatchShutdownSecondsRemaining = effectiveDelay;
+
+            BroadcastPostMatchShutdownMessage(postMatchShutdownSecondsRemaining, true);
+
+            postMatchShutdownMessageTimer = AddTimer(1.0f, () =>
+            {
+                if (!isPostMatchShutdownPending) return;
+
+                postMatchShutdownSecondsRemaining -= 1;
+                if (postMatchShutdownSecondsRemaining <= 0)
+                {
+                    StopPostMatchShutdownMessages();
+                    return;
+                }
+
+                BroadcastPostMatchShutdownMessage(postMatchShutdownSecondsRemaining);
+            }, TimerFlags.REPEAT | TimerFlags.STOP_ON_MAPCHANGE);
+
+            postMatchShutdownLockTimer = AddTimer(effectiveDelay, () =>
+            {
+                StopPostMatchShutdownMessages();
+                postMatchShutdownLockTimer = null;
+                isPostMatchShutdownPending = false;
+                isPostMatchServerLocked = true;
+                postMatchShutdownSecondsRemaining = 0;
+
+                PrintToAllChat(Localizer["matchzy.utility.postmatchserverlocked"]);
+                PrintToAllCenter(Localizer["matchzy.utility.postmatchserverlocked"]);
+
+                ResetMatch(false);
+            }, TimerFlags.STOP_ON_MAPCHANGE);
+        }
+
         private void LoadAdmins()
         {
             string fileName = "MatchZy/admins.json";
@@ -504,7 +585,7 @@ namespace MatchZy
             try
             {
                 var playerEntities = Utilities.FindAllEntitiesByDesignerName<CCSPlayerController>("cs_player_controller");
-                Log($"[UpdatePlayersMap] CCSPlayerController count: {playerEntities.Count<CCSPlayerController>()} matchModeOnly: {matchModeOnly}");
+                Log($"[UpdatePlayersMap] CCSPlayerController count: {playerEntities.Count<CCSPlayerController>()} matchModeOnly: {matchModeOnly} postMatchPending: {isPostMatchShutdownPending} postMatchLocked: {isPostMatchServerLocked}");
                 connectedPlayers = 0;
 
                 // Clear the playerData dictionary by creating a new instance to add fresh data.
@@ -513,6 +594,15 @@ namespace MatchZy
                 {
                     if (player == null) continue;
                     if (!player.IsValid || player.IsBot || player.IsHLTV) continue;
+
+                    if (isPostMatchServerLocked)
+                    {
+                        if (player.UserId.HasValue)
+                        {
+                            Server.ExecuteCommand($"kickid {(ushort)player.UserId}");
+                        }
+                        continue;
+                    }
 
                     if (isMatchSetup || matchModeOnly)
                     {

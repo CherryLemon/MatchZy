@@ -129,6 +129,8 @@
     "matchzy.utility.matchended": "游戏结束后无法使用此命令.",
     "matchzy.utility.tacticaltimeout": "战术暂停期间无法使用此命令.",
     "matchzy.utility.dontpermission": "你无权使用此命令!",
+    "matchzy.utility.postmatchshutdown": "比赛已结束，服务器将在 {0} 秒后关闭。",
+    "matchzy.utility.postmatchserverlocked": "服务器已关闭，正在等待下一场比赛配置。",
   
     "matchzy.pracc.smoke": "玩家 {red}{0}{default} 扔出的烟雾弹耗时 {green}{1}{default}s 后爆开",
     "matchzy.pracc.flash": "玩家 {red}{0}{default} 扔出的闪光弹耗时 {green}{1}{default}s 后爆开",

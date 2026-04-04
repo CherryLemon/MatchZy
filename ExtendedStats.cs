@@ -24,7 +24,6 @@ namespace MatchZy
         // ---- Per-match accumulated state (cleared on match start/reset) ----
         private Dictionary<ulong, int> _kastRounds = new();
         private Dictionary<ulong, float> _rwsTotal = new();
-        private Dictionary<ulong, int> _rwsWonRounds = new();
         private Dictionary<ulong, int> _flashAssists = new();
         private Dictionary<ulong, int> _tradeKills = new();
         private Dictionary<ulong, int> _bombPlantsCount = new();
@@ -46,6 +45,8 @@ namespace MatchZy
         private Dictionary<ulong, int> _oneV5Count = new();
         private Dictionary<ulong, int> _oneV5Wins = new();
         private int _lastExtendedRoundProcessed = -1;
+        private int? _roundBombPlantedUserId;
+        private int? _roundBombDefusedUserId;
 
         private sealed class ExtendedPlayerStatsSnapshot
         {
@@ -78,7 +79,6 @@ namespace MatchZy
         {
             _kastRounds.Clear();
             _rwsTotal.Clear();
-            _rwsWonRounds.Clear();
             _flashAssists.Clear();
             _tradeKills.Clear();
             _bombPlantsCount.Clear();
@@ -146,6 +146,8 @@ namespace MatchZy
             _roundAliveCt.Clear();
             _roundClutchAttempts.Clear();
             _roundFirstKillProcessed = false;
+            _roundBombPlantedUserId = null;
+            _roundBombDefusedUserId = null;
         }
 
         // ---- Event hooks (called from MatchZy.cs event registrations) ----
@@ -257,6 +259,8 @@ namespace MatchZy
         public void TrackBombPlant(CCSPlayerController player)
         {
             if (!isMatchLive || !IsPlayerValid(player)) return;
+            if (player.UserId.HasValue)
+                _roundBombPlantedUserId = (int)player.UserId.Value;
             IncrementStat(_bombPlantsCount, player.SteamID);
         }
 
@@ -264,6 +268,8 @@ namespace MatchZy
         public void TrackBombDefuse(CCSPlayerController player)
         {
             if (!isMatchLive || !IsPlayerValid(player)) return;
+            if (player.UserId.HasValue)
+                _roundBombDefusedUserId = (int)player.UserId.Value;
             IncrementStat(_bombDefusesCount, player.SteamID);
         }
 
@@ -278,6 +284,19 @@ namespace MatchZy
                 HashSet<int> deadPlayerIds = new();
                 foreach (var death in _roundDeathLog)
                     deadPlayerIds.Add(death.victimId);
+
+                int totalRoundDamage = 0;
+                foreach (int damage in _roundEnemyDamage.Values)
+                    totalRoundDamage += damage;
+
+                int? objectiveBonusUserId = winnerTeamNum switch
+                {
+                    2 => _roundBombPlantedUserId,
+                    3 => _roundBombDefusedUserId,
+                    _ => null,
+                };
+
+                float damageSharePool = objectiveBonusUserId.HasValue ? 70f : 100f;
 
                 // Determine traded players: a dead player whose killer was also killed within 5s
                 HashSet<int> tradedPlayerIds = new();
@@ -323,19 +342,11 @@ namespace MatchZy
                     // ---- RWS ----
                     if (player.TeamNum == winnerTeamNum)
                     {
-                        _rwsWonRounds.TryGetValue(steamId, out int wonR);
-                        _rwsWonRounds[steamId] = wonR + 1;
-
-                        int teamTotalDamage = 0;
-                        foreach (int uid in playerData.Keys)
-                        {
-                            var p = playerData[uid];
-                            if (p.IsValid && p.TeamNum == winnerTeamNum)
-                                teamTotalDamage += _roundEnemyDamage.GetValueOrDefault(uid, 0);
-                        }
-
                         int playerDamage = _roundEnemyDamage.GetValueOrDefault(userId, 0);
-                        float rwsShare = teamTotalDamage > 0 ? (float)playerDamage / teamTotalDamage * 100f : 0f;
+                        float rwsShare = totalRoundDamage > 0 ? (float)playerDamage / totalRoundDamage * damageSharePool : 0f;
+
+                        if (objectiveBonusUserId.HasValue && objectiveBonusUserId.Value == userId)
+                            rwsShare += 30f;
 
                         _rwsTotal.TryGetValue(steamId, out float rwsAcc);
                         _rwsTotal[steamId] = rwsAcc + rwsShare;
@@ -374,8 +385,8 @@ namespace MatchZy
                 kast = (int)Math.Round(100.0 * kastR / roundsPlayed);
 
             float rws = 0;
-            if (_rwsWonRounds.TryGetValue(steamId, out int wonR) && wonR > 0 && _rwsTotal.TryGetValue(steamId, out float rwsT))
-                rws = rwsT / wonR;
+            if (roundsPlayed > 0 && _rwsTotal.TryGetValue(steamId, out float rwsT))
+                rws = rwsT / roundsPlayed;
 
             _flashAssists.TryGetValue(steamId, out int fa);
             _tradeKills.TryGetValue(steamId, out int tk);

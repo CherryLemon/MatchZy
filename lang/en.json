@@ -129,6 +129,8 @@
   "matchzy.utility.matchended": "You cannot use this command after the game has ended.",
   "matchzy.utility.tacticaltimeout": "You cannot use this command when tactical timeout is active.",
   "matchzy.utility.dontpermission": "You do not have permission to use this command!",
+  "matchzy.utility.postmatchshutdown": "Match ended. Server closes in {0}s.",
+  "matchzy.utility.postmatchserverlocked": "Server closed. Waiting for the next match config.",
 
   "matchzy.pracc.smoke": "Smoke thrown by {red}{0}{default} took {green}{1}{default}s to detonate",
   "matchzy.pracc.flash": "Flash thrown by {red}{0}{default} took {green}{1}{default}s to detonate",
