@@ -52,6 +52,9 @@ public class PlayerStats
     [JsonPropertyName("damage")]
     public int Damage { get; set; }
 
+    [JsonPropertyName("sniper_kills")]
+    public int SniperKills { get; set; }
+
     [JsonPropertyName("utility_damage")]
     public int UtilityDamage { get; set; }
 
@@ -94,17 +97,32 @@ public class PlayerStats
     [JsonPropertyName("1v1")]
     public int OneV1s { get; set; }
 
+    [JsonPropertyName("1v1_count")]
+    public int OneV1Count { get; set; }
+
     [JsonPropertyName("1v2")]
     public int OneV2s { get; set; }
+
+    [JsonPropertyName("1v2_count")]
+    public int OneV2Count { get; set; }
 
     [JsonPropertyName("1v3")]
     public int OneV3s { get; set; }
 
+    [JsonPropertyName("1v3_count")]
+    public int OneV3Count { get; set; }
+
     [JsonPropertyName("1v4")]
     public int OneV4s { get; set; }
 
+    [JsonPropertyName("1v4_count")]
+    public int OneV4Count { get; set; }
+
     [JsonPropertyName("1v5")]
     public int OneV5s { get; set; }
+
+    [JsonPropertyName("1v5_count")]
+    public int OneV5Count { get; set; }
 
     [JsonPropertyName("first_kills_t")]
     public int FirstKillsT { get; set; }

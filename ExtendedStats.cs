@@ -16,6 +16,10 @@ namespace MatchZy
         private List<(int victimId, int attackerId, float time)> _roundDeathLog = new();
         private Dictionary<int, int> _roundEnemyDamage = new();        // userId -> damage dealt to enemies this round
         private Dictionary<int, (int flasherUserId, float blindEnd)> _blindedPlayers = new();
+        private HashSet<int> _roundAliveT = new();
+        private HashSet<int> _roundAliveCt = new();
+        private Dictionary<int, (int playerUserId, int opponents)> _roundClutchAttempts = new();
+        private bool _roundFirstKillProcessed = false;
 
         // ---- Per-match accumulated state (cleared on match start/reset) ----
         private Dictionary<ulong, int> _kastRounds = new();
@@ -26,7 +30,48 @@ namespace MatchZy
         private Dictionary<ulong, int> _bombPlantsCount = new();
         private Dictionary<ulong, int> _bombDefusesCount = new();
         private Dictionary<ulong, int> _kills1Rounds = new();
+        private Dictionary<ulong, int> _sniperKills = new();
+        private Dictionary<ulong, int> _firstKillsT = new();
+        private Dictionary<ulong, int> _firstKillsCt = new();
+        private Dictionary<ulong, int> _firstDeathsT = new();
+        private Dictionary<ulong, int> _firstDeathsCt = new();
+        private Dictionary<ulong, int> _oneV1Count = new();
+        private Dictionary<ulong, int> _oneV1Wins = new();
+        private Dictionary<ulong, int> _oneV2Count = new();
+        private Dictionary<ulong, int> _oneV2Wins = new();
+        private Dictionary<ulong, int> _oneV3Count = new();
+        private Dictionary<ulong, int> _oneV3Wins = new();
+        private Dictionary<ulong, int> _oneV4Count = new();
+        private Dictionary<ulong, int> _oneV4Wins = new();
+        private Dictionary<ulong, int> _oneV5Count = new();
+        private Dictionary<ulong, int> _oneV5Wins = new();
         private int _lastExtendedRoundProcessed = -1;
+
+        private sealed class ExtendedPlayerStatsSnapshot
+        {
+            public int Kast { get; init; }
+            public float Rws { get; init; }
+            public int FlashAssists { get; init; }
+            public int TradeKills { get; init; }
+            public int BombPlants { get; init; }
+            public int BombDefuses { get; init; }
+            public int Kills1 { get; init; }
+            public int SniperKills { get; init; }
+            public int FirstKillsT { get; init; }
+            public int FirstKillsCt { get; init; }
+            public int FirstDeathsT { get; init; }
+            public int FirstDeathsCt { get; init; }
+            public int OneV1Count { get; init; }
+            public int OneV1Wins { get; init; }
+            public int OneV2Count { get; init; }
+            public int OneV2Wins { get; init; }
+            public int OneV3Count { get; init; }
+            public int OneV3Wins { get; init; }
+            public int OneV4Count { get; init; }
+            public int OneV4Wins { get; init; }
+            public int OneV5Count { get; init; }
+            public int OneV5Wins { get; init; }
+        }
 
         /// <summary>Clear all accumulated stats — call when a match starts or resets.</summary>
         public void InitExtendedStats()
@@ -39,8 +84,46 @@ namespace MatchZy
             _bombPlantsCount.Clear();
             _bombDefusesCount.Clear();
             _kills1Rounds.Clear();
+            _sniperKills.Clear();
+            _firstKillsT.Clear();
+            _firstKillsCt.Clear();
+            _firstDeathsT.Clear();
+            _firstDeathsCt.Clear();
+            _oneV1Count.Clear();
+            _oneV1Wins.Clear();
+            _oneV2Count.Clear();
+            _oneV2Wins.Clear();
+            _oneV3Count.Clear();
+            _oneV3Wins.Clear();
+            _oneV4Count.Clear();
+            _oneV4Wins.Clear();
+            _oneV5Count.Clear();
+            _oneV5Wins.Clear();
             _lastExtendedRoundProcessed = -1;
             ResetRoundExtendedStats();
+        }
+
+        public void StartRoundExtendedStats()
+        {
+            ResetRoundExtendedStats();
+
+            foreach (int userId in playerData.Keys)
+            {
+                var player = playerData[userId];
+                if (!player.IsValid) continue;
+
+                if (player.TeamNum == 2)
+                {
+                    _roundAliveT.Add(userId);
+                }
+                else if (player.TeamNum == 3)
+                {
+                    _roundAliveCt.Add(userId);
+                }
+            }
+
+            RegisterClutchAttemptIfNeeded(2);
+            RegisterClutchAttemptIfNeeded(3);
         }
 
         public void ProcessRoundEndExtendedStatsIfNeeded(int winnerTeamNum, int roundNumber)
@@ -59,6 +142,10 @@ namespace MatchZy
             _roundDeathLog.Clear();
             _roundEnemyDamage.Clear();
             _blindedPlayers.Clear();
+            _roundAliveT.Clear();
+            _roundAliveCt.Clear();
+            _roundClutchAttempts.Clear();
+            _roundFirstKillProcessed = false;
         }
 
         // ---- Event hooks (called from MatchZy.cs event registrations) ----
@@ -77,12 +164,27 @@ namespace MatchZy
             int victimId = (int)victim!.UserId!;
             float gameTime = Server.CurrentTime;
             int attackerId = -1;
+            bool isEnemyKill = IsPlayerValid(attacker) && attacker!.UserId.HasValue && attacker != victim && attacker.TeamNum != victim.TeamNum;
 
             if (IsPlayerValid(attacker) && attacker!.UserId.HasValue)
             {
                 attackerId = (int)attacker.UserId;
                 _roundKillCount.TryGetValue(attackerId, out int kc);
                 _roundKillCount[attackerId] = kc + 1;
+
+                if (isEnemyKill)
+                {
+                    if (!_roundFirstKillProcessed)
+                    {
+                        _roundFirstKillProcessed = true;
+                        IncrementSideStat(attacker.SteamID, attacker.TeamNum, _firstKillsT, _firstKillsCt);
+                    }
+
+                    if (IsSniperWeapon(@event.Weapon))
+                    {
+                        IncrementStat(_sniperKills, attacker.SteamID);
+                    }
+                }
 
                 // Flash assist: victim was blinded by a teammate of the attacker
                 if (_blindedPlayers.TryGetValue(victimId, out var blindInfo) && blindInfo.blindEnd > gameTime)
@@ -113,11 +215,24 @@ namespace MatchZy
                 }
             }
 
+            if (!_roundFirstKillProcessed)
+            {
+                _roundFirstKillProcessed = true;
+            }
+
+            if (_roundFirstKillProcessed)
+            {
+                IncrementSideStat(victim.SteamID, victim.TeamNum, _firstDeathsT, _firstDeathsCt);
+            }
+
             // Track assist for KAST
             if (IsPlayerValid(assister) && assister!.UserId.HasValue)
             {
                 _roundAssisted[(int)assister.UserId] = true;
             }
+
+            RemoveAlivePlayer(victimId, victim.TeamNum);
+            RegisterClutchAttemptIfNeeded(victim.TeamNum);
 
             _blindedPlayers.Remove(victimId);
             _roundDeathLog.Add((victimId, attackerId, gameTime));
@@ -226,6 +341,20 @@ namespace MatchZy
                         _rwsTotal[steamId] = rwsAcc + rwsShare;
                     }
                 }
+
+                foreach (var clutchAttempt in _roundClutchAttempts.Values)
+                {
+                    if (!playerData.TryGetValue(clutchAttempt.playerUserId, out var player) || !player.IsValid)
+                        continue;
+
+                    if (player.TeamNum != winnerTeamNum)
+                        continue;
+
+                    if (deadPlayerIds.Contains(clutchAttempt.playerUserId))
+                        continue;
+
+                    IncrementClutchStat(clutchAttempt.opponents, player.SteamID, isWin: true);
+                }
             }
             catch (Exception e)
             {
@@ -238,8 +367,7 @@ namespace MatchZy
         }
 
         /// <summary>Get accumulated extended stats for populating PlayerStats.</summary>
-        public (int kast, float rws, int flashAssists, int tradeKills, int bombPlants, int bombDefuses, int kills1)
-            GetExtendedStatsForPlayer(ulong steamId, int roundsPlayed)
+        private ExtendedPlayerStatsSnapshot GetExtendedStatsForPlayer(ulong steamId, int roundsPlayed)
         {
             int kast = 0;
             if (roundsPlayed > 0 && _kastRounds.TryGetValue(steamId, out int kastR))
@@ -255,7 +383,99 @@ namespace MatchZy
             _bombDefusesCount.TryGetValue(steamId, out int bd);
             _kills1Rounds.TryGetValue(steamId, out int k1);
 
-            return (kast, rws, fa, tk, bp, bd, k1);
+            return new ExtendedPlayerStatsSnapshot
+            {
+                Kast = kast,
+                Rws = rws,
+                FlashAssists = fa,
+                TradeKills = tk,
+                BombPlants = bp,
+                BombDefuses = bd,
+                Kills1 = k1,
+                SniperKills = _sniperKills.GetValueOrDefault(steamId, 0),
+                FirstKillsT = _firstKillsT.GetValueOrDefault(steamId, 0),
+                FirstKillsCt = _firstKillsCt.GetValueOrDefault(steamId, 0),
+                FirstDeathsT = _firstDeathsT.GetValueOrDefault(steamId, 0),
+                FirstDeathsCt = _firstDeathsCt.GetValueOrDefault(steamId, 0),
+                OneV1Count = _oneV1Count.GetValueOrDefault(steamId, 0),
+                OneV1Wins = _oneV1Wins.GetValueOrDefault(steamId, 0),
+                OneV2Count = _oneV2Count.GetValueOrDefault(steamId, 0),
+                OneV2Wins = _oneV2Wins.GetValueOrDefault(steamId, 0),
+                OneV3Count = _oneV3Count.GetValueOrDefault(steamId, 0),
+                OneV3Wins = _oneV3Wins.GetValueOrDefault(steamId, 0),
+                OneV4Count = _oneV4Count.GetValueOrDefault(steamId, 0),
+                OneV4Wins = _oneV4Wins.GetValueOrDefault(steamId, 0),
+                OneV5Count = _oneV5Count.GetValueOrDefault(steamId, 0),
+                OneV5Wins = _oneV5Wins.GetValueOrDefault(steamId, 0),
+            };
+        }
+
+        private void RemoveAlivePlayer(int userId, int teamNum)
+        {
+            if (teamNum == 2)
+            {
+                _roundAliveT.Remove(userId);
+            }
+            else if (teamNum == 3)
+            {
+                _roundAliveCt.Remove(userId);
+            }
+        }
+
+        private void RegisterClutchAttemptIfNeeded(int teamNum)
+        {
+            if (_roundClutchAttempts.ContainsKey(teamNum))
+                return;
+
+            HashSet<int> aliveSet = teamNum == 2 ? _roundAliveT : _roundAliveCt;
+            HashSet<int> opponentAliveSet = teamNum == 2 ? _roundAliveCt : _roundAliveT;
+
+            if (aliveSet.Count != 1)
+                return;
+
+            int opponents = opponentAliveSet.Count;
+            if (opponents < 1 || opponents > 5)
+                return;
+
+            int playerUserId = aliveSet.First();
+            if (!playerData.TryGetValue(playerUserId, out var player) || !player.IsValid)
+                return;
+
+            _roundClutchAttempts[teamNum] = (playerUserId, opponents);
+            IncrementClutchStat(opponents, player.SteamID, isWin: false);
+        }
+
+        private void IncrementClutchStat(int opponents, ulong steamId, bool isWin)
+        {
+            Dictionary<ulong, int> target = opponents switch
+            {
+                1 => isWin ? _oneV1Wins : _oneV1Count,
+                2 => isWin ? _oneV2Wins : _oneV2Count,
+                3 => isWin ? _oneV3Wins : _oneV3Count,
+                4 => isWin ? _oneV4Wins : _oneV4Count,
+                5 => isWin ? _oneV5Wins : _oneV5Count,
+                _ => throw new ArgumentOutOfRangeException(nameof(opponents)),
+            };
+
+            IncrementStat(target, steamId);
+        }
+
+        private static void IncrementSideStat(ulong steamId, int teamNum, Dictionary<ulong, int> tStats, Dictionary<ulong, int> ctStats)
+        {
+            if (teamNum == 2)
+            {
+                IncrementStat(tStats, steamId);
+            }
+            else if (teamNum == 3)
+            {
+                IncrementStat(ctStats, steamId);
+            }
+        }
+
+        private static bool IsSniperWeapon(string weapon)
+        {
+            string normalized = weapon.Replace("weapon_", string.Empty).ToLowerInvariant();
+            return normalized == "awp" || normalized == "ssg08" || normalized == "scar20" || normalized == "g3sg1";
         }
 
         private static void IncrementStat(Dictionary<ulong, int> dict, ulong key)

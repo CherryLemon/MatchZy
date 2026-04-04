@@ -1688,8 +1688,7 @@ namespace MatchZy
                     playerStatsDictionary.Add(steamid64, stats);
 
                     // Get extended stats computed by ExtendedStats.cs
-                    var (kastPct, rws, flashAssists, tradeKills, bombPlants, bombDefuses, kills1) =
-                        GetExtendedStatsForPlayer(steamid64, roundsPlayed);
+                    var extendedStats = GetExtendedStatsForPlayer(steamid64, roundsPlayed);
 
                     // Populate PlayerStats instance
                     PlayerStats playerStatsInstance = new()
@@ -1697,37 +1696,43 @@ namespace MatchZy
                         Kills = playerStats.Kills,
                         Deaths = playerStats.Deaths,
                         Assists = playerStats.Assists,
-                        FlashAssists = flashAssists,
+                        FlashAssists = extendedStats.FlashAssists,
                         TeamKills = 0,
                         Suicides = 0,
                         Damage = playerStats.Damage,
+                        SniperKills = extendedStats.SniperKills,
                         UtilityDamage = playerStats.UtilityDamage,
                         EnemiesFlashed = playerStats.EnemiesFlashed,
                         FriendliesFlashed = 0,
                         KnifeKills = 0,
                         HeadshotKills = playerStats.HeadShotKills,
                         RoundsPlayed = roundsPlayed,
-                        BombDefuses = bombDefuses,
-                        BombPlants = bombPlants,
-                        Kills1 = kills1,
+                        BombDefuses = extendedStats.BombDefuses,
+                        BombPlants = extendedStats.BombPlants,
+                        Kills1 = extendedStats.Kills1,
                         Kills2 = playerStats.Enemy2Ks,
                         Kills3 = playerStats.Enemy3Ks,
                         Kills4 = playerStats.Enemy4Ks,
                         Kills5 = playerStats.Enemy5Ks,
-                        OneV1s = playerStats.I1v1Wins,
-                        OneV2s = playerStats.I1v2Wins,
-                        OneV3s = 0,
-                        OneV4s = 0,
-                        OneV5s = 0,
-                        FirstKillsT = 0,
-                        FirstKillsCT = 0,
-                        FirstDeathsT = 0,
-                        FirstDeathsCT = 0,
-                        TradeKills = tradeKills,
-                        Kast = kastPct,
+                        OneV1s = extendedStats.OneV1Wins,
+                        OneV1Count = extendedStats.OneV1Count,
+                        OneV2s = extendedStats.OneV2Wins,
+                        OneV2Count = extendedStats.OneV2Count,
+                        OneV3s = extendedStats.OneV3Wins,
+                        OneV3Count = extendedStats.OneV3Count,
+                        OneV4s = extendedStats.OneV4Wins,
+                        OneV4Count = extendedStats.OneV4Count,
+                        OneV5s = extendedStats.OneV5Wins,
+                        OneV5Count = extendedStats.OneV5Count,
+                        FirstKillsT = extendedStats.FirstKillsT,
+                        FirstKillsCT = extendedStats.FirstKillsCt,
+                        FirstDeathsT = extendedStats.FirstDeathsT,
+                        FirstDeathsCT = extendedStats.FirstDeathsCt,
+                        TradeKills = extendedStats.TradeKills,
+                        Kast = extendedStats.Kast,
                         Score = player.Score,
                         Mvps = player.MVPs,
-                        Rws = (float)Math.Round(rws, 2),
+                        Rws = (float)Math.Round(extendedStats.Rws, 2),
                     };
 
                     StatsPlayer statsPlayer = new()
