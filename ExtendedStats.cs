@@ -5,7 +5,7 @@ using CounterStrikeSharp.API.Core;
 namespace MatchZy
 {
     /// <summary>
-    /// Tracks KAST, RWS, flash assists, trade kills, bomb plant/defuse, and 1k rounds.
+    /// Tracks KAST, RWS, flash assists, first kill/death, trade kill/death, bomb plant/defuse, and 1k rounds.
     /// All state is accumulated per-match and reset when the match ends.
     /// </summary>
     public partial class MatchZy
@@ -26,6 +26,7 @@ namespace MatchZy
         private Dictionary<ulong, float> _rwsTotal = new();
         private Dictionary<ulong, int> _flashAssists = new();
         private Dictionary<ulong, int> _tradeKills = new();
+        private Dictionary<ulong, int> _tradeDeaths = new();
         private Dictionary<ulong, int> _bombPlantsCount = new();
         private Dictionary<ulong, int> _bombDefusesCount = new();
         private Dictionary<ulong, int> _kills1Rounds = new();
@@ -54,6 +55,7 @@ namespace MatchZy
             public float Rws { get; init; }
             public int FlashAssists { get; init; }
             public int TradeKills { get; init; }
+            public int TradeDeaths { get; init; }
             public int BombPlants { get; init; }
             public int BombDefuses { get; init; }
             public int Kills1 { get; init; }
@@ -81,6 +83,7 @@ namespace MatchZy
             _rwsTotal.Clear();
             _flashAssists.Clear();
             _tradeKills.Clear();
+            _tradeDeaths.Clear();
             _bombPlantsCount.Clear();
             _bombDefusesCount.Clear();
             _kills1Rounds.Clear();
@@ -171,60 +174,51 @@ namespace MatchZy
             if (IsPlayerValid(attacker) && attacker!.UserId.HasValue)
             {
                 attackerId = (int)attacker.UserId;
-                _roundKillCount.TryGetValue(attackerId, out int kc);
-                _roundKillCount[attackerId] = kc + 1;
 
                 if (isEnemyKill)
                 {
+                    _roundKillCount.TryGetValue(attackerId, out int kc);
+                    _roundKillCount[attackerId] = kc + 1;
+
                     if (!_roundFirstKillProcessed)
                     {
                         _roundFirstKillProcessed = true;
                         IncrementSideStat(attacker.SteamID, attacker.TeamNum, _firstKillsT, _firstKillsCt);
+                        IncrementSideStat(victim.SteamID, victim.TeamNum, _firstDeathsT, _firstDeathsCt);
                     }
 
                     if (IsSniperWeapon(@event.Weapon))
                     {
                         IncrementStat(_sniperKills, attacker.SteamID);
                     }
-                }
 
-                // Flash assist: victim was blinded by a teammate of the attacker
-                if (_blindedPlayers.TryGetValue(victimId, out var blindInfo) && blindInfo.blindEnd > gameTime)
-                {
-                    int flasherUserId = blindInfo.flasherUserId;
-                    if (flasherUserId != attackerId && playerData.TryGetValue(flasherUserId, out var flasher))
+                    // Flash assist: victim was blinded by a teammate of the attacker
+                    if (_blindedPlayers.TryGetValue(victimId, out var blindInfo) && blindInfo.blindEnd > gameTime)
                     {
-                        if (flasher.IsValid && flasher.TeamNum == attacker.TeamNum)
+                        int flasherUserId = blindInfo.flasherUserId;
+                        if (flasherUserId != attackerId && playerData.TryGetValue(flasherUserId, out var flasher))
                         {
-                            IncrementStat(_flashAssists, flasher.SteamID);
+                            if (flasher.IsValid && flasher.TeamNum == attacker.TeamNum)
+                            {
+                                IncrementStat(_flashAssists, flasher.SteamID);
+                            }
+                        }
+                    }
+
+                    // Trade kill: attacker killed someone who killed attacker's teammate within 5s.
+                    foreach (var death in _roundDeathLog)
+                    {
+                        if (death.attackerId == victimId && gameTime - death.time <= 5.0f)
+                        {
+                            if (playerData.TryGetValue(death.victimId, out var deadTeammate) &&
+                                deadTeammate.IsValid && deadTeammate.TeamNum == attacker.TeamNum)
+                            {
+                                IncrementStat(_tradeKills, attacker.SteamID);
+                                break;
+                            }
                         }
                     }
                 }
-
-                // Trade kill: attacker killed someone who killed attacker's teammate within 5s
-                foreach (var death in _roundDeathLog)
-                {
-                    if (death.attackerId == victimId && gameTime - death.time <= 5.0f)
-                    {
-                        // The person we just killed had killed one of our teammates recently
-                        if (playerData.TryGetValue(death.victimId, out var deadTeammate) &&
-                            deadTeammate.IsValid && deadTeammate.TeamNum == attacker.TeamNum)
-                        {
-                            IncrementStat(_tradeKills, attacker.SteamID);
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (!_roundFirstKillProcessed)
-            {
-                _roundFirstKillProcessed = true;
-            }
-
-            if (_roundFirstKillProcessed)
-            {
-                IncrementSideStat(victim.SteamID, victim.TeamNum, _firstDeathsT, _firstDeathsCt);
             }
 
             // Track assist for KAST
@@ -298,19 +292,42 @@ namespace MatchZy
 
                 float damageSharePool = objectiveBonusUserId.HasValue ? 70f : 100f;
 
-                // Determine traded players: a dead player whose killer was also killed within 5s
+                // Determine traded players: a dead player whose killer was killed by the dead player's
+                // teammate within 5s. This is also the T in KAST.
                 HashSet<int> tradedPlayerIds = new();
                 foreach (var death in _roundDeathLog)
                 {
+                    if (!playerData.TryGetValue(death.victimId, out var victim) || !victim.IsValid)
+                        continue;
+                    if (!playerData.TryGetValue(death.attackerId, out var killer) || !killer.IsValid)
+                        continue;
+                    if (killer.TeamNum == victim.TeamNum)
+                        continue;
+
                     foreach (var subsequent in _roundDeathLog)
                     {
-                        if (subsequent.victimId == death.attackerId &&
-                            subsequent.time >= death.time &&
-                            subsequent.time - death.time <= 5.0f)
+                        if (subsequent.victimId != death.attackerId ||
+                            subsequent.time < death.time ||
+                            subsequent.time - death.time > 5.0f)
                         {
-                            tradedPlayerIds.Add(death.victimId);
-                            break;
+                            continue;
                         }
+
+                        if (!playerData.TryGetValue(subsequent.attackerId, out var tradeAttacker) || !tradeAttacker.IsValid)
+                            continue;
+                        if (tradeAttacker.TeamNum != victim.TeamNum)
+                            continue;
+
+                        tradedPlayerIds.Add(death.victimId);
+                        break;
+                    }
+                }
+
+                foreach (int tradedPlayerId in tradedPlayerIds)
+                {
+                    if (playerData.TryGetValue(tradedPlayerId, out var tradedPlayer) && tradedPlayer.IsValid)
+                    {
+                        IncrementStat(_tradeDeaths, tradedPlayer.SteamID);
                     }
                 }
 
@@ -390,6 +407,7 @@ namespace MatchZy
 
             _flashAssists.TryGetValue(steamId, out int fa);
             _tradeKills.TryGetValue(steamId, out int tk);
+            _tradeDeaths.TryGetValue(steamId, out int td);
             _bombPlantsCount.TryGetValue(steamId, out int bp);
             _bombDefusesCount.TryGetValue(steamId, out int bd);
             _kills1Rounds.TryGetValue(steamId, out int k1);
@@ -400,6 +418,7 @@ namespace MatchZy
                 Rws = rws,
                 FlashAssists = fa,
                 TradeKills = tk,
+                TradeDeaths = td,
                 BombPlants = bp,
                 BombDefuses = bd,
                 Kills1 = k1,

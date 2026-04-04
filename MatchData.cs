@@ -139,6 +139,9 @@ public class PlayerStats
     [JsonPropertyName("trade_kills")]
     public int TradeKills { get; set; }
 
+    [JsonPropertyName("trade_deaths")]
+    public int TradeDeaths { get; set; }
+
     [JsonPropertyName("kast")]
     public int Kast { get; set; }
 

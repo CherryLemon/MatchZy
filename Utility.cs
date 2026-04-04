@@ -1819,6 +1819,7 @@ namespace MatchZy
                         FirstDeathsT = extendedStats.FirstDeathsT,
                         FirstDeathsCT = extendedStats.FirstDeathsCt,
                         TradeKills = extendedStats.TradeKills,
+                        TradeDeaths = extendedStats.TradeDeaths,
                         Kast = extendedStats.Kast,
                         Score = player.Score,
                         Mvps = player.MVPs,
