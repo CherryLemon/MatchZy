@@ -228,7 +228,8 @@ namespace MatchZy
             }
 
             RemoveAlivePlayer(victimId, victim.TeamNum);
-            RegisterClutchAttemptIfNeeded(victim.TeamNum);
+            RegisterClutchAttemptIfNeeded(2);
+            RegisterClutchAttemptIfNeeded(3);
 
             _blindedPlayers.Remove(victimId);
             _roundDeathLog.Add((victimId, attackerId, gameTime));
