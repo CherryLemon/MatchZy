@@ -11,6 +11,11 @@ namespace MatchZy
     public partial class MatchZy
     {
 
+        private static string NormalizeQuotedConsoleArg(string value)
+        {
+            return value.Trim().Trim('"');
+        }
+
         public FakeConVar<bool> smokeColorEnabled = new("matchzy_smoke_color_enabled", "Whether player-specific smoke color is enabled or not. Default: false", false);
         public FakeConVar<bool> techPauseEnabled = new("matchzy_enable_tech_pause", "Whether .tech command is enabled or not. Default: true", true);
         public FakeConVar<string> techPausePermission  = new("matchzy_tech_pause_flag", "Flag required to use tech pause", "");
@@ -45,7 +50,7 @@ namespace MatchZy
         public void MatchZyLocalFillBotsOnFirstConnect(CCSPlayerController? player, CommandInfo command)
         {
             if (player != null) return;
-            string args = command.ArgString.Trim().Trim('"');
+            string args = NormalizeQuotedConsoleArg(command.ArgString);
 
             localFillBotsOnFirstConnect = bool.TryParse(args, out bool enabledValue) ? enabledValue : args != "0" && localFillBotsOnFirstConnect;
             Log($"[MatchZyLocalFillBotsOnFirstConnect] localFillBotsOnFirstConnect={localFillBotsOnFirstConnect} raw={command.ArgString}");
@@ -193,7 +198,7 @@ namespace MatchZy
         {
             if (player != null) return;
 
-            string args = command.ArgString.Trim();
+            string args = NormalizeQuotedConsoleArg(command.ArgString);
 
             if (string.IsNullOrEmpty(args))
             {
@@ -213,7 +218,7 @@ namespace MatchZy
         {
             if (player != null) return;
 
-            string args = command.ArgString.Trim();
+            string args = NormalizeQuotedConsoleArg(command.ArgString);
 
             if (string.IsNullOrEmpty(args))
             {
