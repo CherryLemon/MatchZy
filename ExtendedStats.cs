@@ -110,10 +110,11 @@ namespace MatchZy
         {
             ResetRoundExtendedStats();
 
-            foreach (int userId in playerData.Keys)
+            foreach (var player in GetLivePlayersForRoundState())
             {
-                var player = playerData[userId];
-                if (!player.IsValid) continue;
+                if (!player.UserId.HasValue) continue;
+
+                int userId = (int)player.UserId.Value;
 
                 if (player.TeamNum == 2)
                 {
@@ -298,11 +299,14 @@ namespace MatchZy
                 HashSet<int> tradedPlayerIds = new();
                 foreach (var death in _roundDeathLog)
                 {
-                    if (!playerData.TryGetValue(death.victimId, out var victim) || !victim.IsValid)
+                    var victim = FindTrackedPlayerByUserId(death.victimId);
+                    if (!IsPlayerValid(victim))
                         continue;
-                    if (!playerData.TryGetValue(death.attackerId, out var killer) || !killer.IsValid)
+
+                    var killer = FindTrackedPlayerByUserId(death.attackerId);
+                    if (!IsPlayerValid(killer))
                         continue;
-                    if (killer.TeamNum == victim.TeamNum)
+                    if (killer!.TeamNum == victim!.TeamNum)
                         continue;
 
                     foreach (var subsequent in _roundDeathLog)
@@ -314,9 +318,10 @@ namespace MatchZy
                             continue;
                         }
 
-                        if (!playerData.TryGetValue(subsequent.attackerId, out var tradeAttacker) || !tradeAttacker.IsValid)
+                        var tradeAttacker = FindTrackedPlayerByUserId(subsequent.attackerId);
+                        if (!IsPlayerValid(tradeAttacker))
                             continue;
-                        if (tradeAttacker.TeamNum != victim.TeamNum)
+                        if (tradeAttacker!.TeamNum != victim!.TeamNum)
                             continue;
 
                         tradedPlayerIds.Add(death.victimId);
@@ -326,9 +331,10 @@ namespace MatchZy
 
                 foreach (int tradedPlayerId in tradedPlayerIds)
                 {
-                    if (playerData.TryGetValue(tradedPlayerId, out var tradedPlayer) && tradedPlayer.IsValid)
+                    var tradedPlayer = FindTrackedPlayerByUserId(tradedPlayerId);
+                    if (IsPlayerValid(tradedPlayer))
                     {
-                        IncrementStat(_tradeDeaths, tradedPlayer.SteamID);
+                        IncrementStat(_tradeDeaths, tradedPlayer!.SteamID);
                     }
                 }
 
@@ -373,15 +379,14 @@ namespace MatchZy
 
                 foreach (var clutchAttempt in _roundClutchAttempts.Values)
                 {
-                    if (!playerData.TryGetValue(clutchAttempt.playerUserId, out var player) || !player.IsValid)
+                    var player = FindTrackedPlayerByUserId(clutchAttempt.playerUserId);
+                    if (!IsPlayerValid(player))
                         continue;
 
-                    if (player.TeamNum != winnerTeamNum)
+                    if (player!.TeamNum != winnerTeamNum)
                         continue;
 
-                    if (deadPlayerIds.Contains(clutchAttempt.playerUserId))
-                        continue;
-
+                    // A clutch is successful as long as the player's team wins the round.
                     IncrementClutchStat(clutchAttempt.opponents, player.SteamID, isWin: true);
                 }
             }
@@ -469,11 +474,43 @@ namespace MatchZy
                 return;
 
             int playerUserId = aliveSet.First();
-            if (!playerData.TryGetValue(playerUserId, out var player) || !player.IsValid)
+            var player = FindTrackedPlayerByUserId(playerUserId);
+            if (!IsPlayerValid(player) || player!.IsBot)
                 return;
 
             _roundClutchAttempts[teamNum] = (playerUserId, opponents);
             IncrementClutchStat(opponents, player.SteamID, isWin: false);
+        }
+
+        private IEnumerable<CCSPlayerController> GetLivePlayersForRoundState()
+        {
+            foreach (var player in Utilities.GetPlayers())
+            {
+                if (!IsPlayerValid(player))
+                    continue;
+                if (player!.IsHLTV)
+                    continue;
+                if (player.TeamNum != 2 && player.TeamNum != 3)
+                    continue;
+                if (player.Connected != PlayerConnectedState.PlayerConnected)
+                    continue;
+
+                yield return player;
+            }
+        }
+
+        private CCSPlayerController? FindTrackedPlayerByUserId(int userId)
+        {
+            if (playerData.TryGetValue(userId, out var trackedPlayer) && IsPlayerValid(trackedPlayer))
+                return trackedPlayer;
+
+            foreach (var livePlayer in GetLivePlayersForRoundState())
+            {
+                if (livePlayer.UserId.HasValue && livePlayer.UserId.Value == userId)
+                    return livePlayer;
+            }
+
+            return null;
         }
 
         private void IncrementClutchStat(int opponents, ulong steamId, bool isWin)

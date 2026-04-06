@@ -1139,6 +1139,7 @@ namespace MatchZy
             CreateMatchZyRoundDataBackup();
             InitPlayerDamageInfo();
             UpdateHostname();
+            StartRoundExtendedStats();
         }
 
         private void HandlePostRoundEndEvent(EventRoundEnd @event)
