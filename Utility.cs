@@ -1624,7 +1624,8 @@ namespace MatchZy
             foreach (string key in matchConfig.ChangedCvars.Keys)
             {
                 string value = matchConfig.ChangedCvars[key];
-                Log($"[ExecuteChangedConvars] Execing: {key} \"{value}\"");
+                string loggedValue = IsSensitiveConvarName(key) ? "<redacted>" : value;
+                Log($"[ExecuteChangedConvars] Execing: {key} \"{loggedValue}\"");
                 Server.ExecuteCommand($"{key} \"{value}\"");
             }
         }
@@ -1634,9 +1635,18 @@ namespace MatchZy
             foreach (string key in matchConfig.OriginalCvars.Keys)
             {
                 string value = matchConfig.OriginalCvars[key];
-                Log($"[ResetChangedConvars] Execing: {key} \"{value}\"");
+                string loggedValue = IsSensitiveConvarName(key) ? "<redacted>" : value;
+                Log($"[ResetChangedConvars] Execing: {key} \"{loggedValue}\"");
                 Server.ExecuteCommand($"{key} {value}");
             }
+        }
+
+        private static bool IsSensitiveConvarName(string name)
+        {
+            return name.Contains("password", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("secret", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("token", StringComparison.OrdinalIgnoreCase)
+                || name.Contains("header_value", StringComparison.OrdinalIgnoreCase);
         }
 
         public string FormatCvarValue(string value)

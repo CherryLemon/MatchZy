@@ -124,13 +124,13 @@ namespace MatchZy
             string headerName = command.ArgCount > 3 ? command.ArgByIndex(2) : "";
             string headerValue = command.ArgCount > 3 ? command.ArgByIndex(3) : "";
 
-            Log($"[LoadMatchDataCommand] Match setup request received with URL: {url} headerName: {headerName} and headerValue: {headerValue}");
+            Log($"[LoadMatchDataCommand] Match setup request received from: {RedactUrlForLog(url)} headerConfigured: {headerName != ""}");
 
             if (!IsValidUrl(url))
             {
                 // command.ReplyToCommand($"[LoadMatchDataCommand] Invalid URL: {url}. Please provide a valid URL to load the match!");
-                ReplyToUserCommand(player, Localizer["matchzy.mm.invalidurl", url]);
-                Log($"[LoadMatchDataCommand] Invalid URL: {url}. Please provide a valid URL to load the match!");
+                ReplyToUserCommand(player, Localizer["matchzy.mm.invalidurl", "<invalid-url>"]);
+                Log("[LoadMatchDataCommand] Invalid URL. Please provide a valid URL to load the match!");
                 return;
             }
             try
@@ -145,7 +145,9 @@ namespace MatchZy
                 if (response.IsSuccessStatusCode)
                 {
                     string jsonData = response.Content.ReadAsStringAsync().Result;
-                    Log($"[LoadMatchFromURL] Received following data: {jsonData}");
+                    // Match configs contain callback credentials, player data,
+                    // and server passwords. Never copy the payload to logs.
+                    Log($"[LoadMatchFromURL] Received match config payload ({jsonData.Length} chars)");
 
                     bool success = LoadMatchFromJSON(jsonData);
                     if (!success)
@@ -154,7 +156,9 @@ namespace MatchZy
                         ReplyToUserCommand(player, Localizer["matchzy.mm.matchloadfailed"]);
                         ResetMatch();
                     }
-                    loadedConfigFile = url;
+                    // get5_status is routinely captured in diagnostics. Keep
+                    // the source path but never retain bearer query strings.
+                    loadedConfigFile = RedactUrlForLog(url);
                 }
                 else
                 {
@@ -165,9 +169,25 @@ namespace MatchZy
             }
             catch (Exception e)
             {
-                Log($"[LoadMatchFromURL - FATAL] An error occured: {e.Message}");
+                Log($"[LoadMatchFromURL - FATAL] Request failed: {e.GetType().Name}");
                 return;
             }
+        }
+
+        private static string RedactUrlForLog(string url)
+        {
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? parsed))
+            {
+                return "<invalid-url>";
+            }
+            UriBuilder safe = new(parsed)
+            {
+                Query = "",
+                Fragment = "",
+                UserName = "",
+                Password = ""
+            };
+            return safe.Uri.GetLeftPart(UriPartial.Path);
         }
 
         static string ValidateMatchJsonStructure(JObject jsonData)

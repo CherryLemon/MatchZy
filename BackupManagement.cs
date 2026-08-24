@@ -572,12 +572,12 @@ namespace MatchZy
             string headerName = command.ArgCount > 3 ? command.ArgByIndex(2) : "";
             string headerValue = command.ArgCount > 3 ? command.ArgByIndex(3) : "";
 
-            Log($"[LoadBackupFromURL] Backup Restore request received with URL: {url} headerName: {headerName} and headerValue: {headerValue}");
+            Log($"[LoadBackupFromURL] Backup restore request received from: {RedactUrlForLog(url)} headerConfigured: {headerName != ""}");
 
             if (!IsValidUrl(url))
             {
-                ReplyToUserCommand(player, Localizer["matchzy.mm.invalidurl", url]);
-                Log($"[LoadBackupFromURL] Invalid URL: {url}. Please provide a valid URL to load the backup!");
+                ReplyToUserCommand(player, Localizer["matchzy.mm.invalidurl", "<invalid-url>"]);
+                Log("[LoadBackupFromURL] Invalid URL. Please provide a valid URL to load the backup!");
                 return;
             }
             try
@@ -592,7 +592,9 @@ namespace MatchZy
                 if (response.IsSuccessStatusCode)
                 {
                     string jsonData = response.Content.ReadAsStringAsync().Result;
-                    Log($"[LoadBackupFromURL] Received following data: {jsonData}");
+                    // Backup JSON may contain the same remote-log credentials
+                    // as a match config. Log only its size.
+                    Log($"[LoadBackupFromURL] Received backup payload ({jsonData.Length} chars)");
                     string fileName = Guid.NewGuid().ToString() + ".json";
                     string filePath = Path.Combine(Server.GameDirectory, "csgo", "MatchZyDataBackup", fileName);
 
@@ -614,7 +616,7 @@ namespace MatchZy
             }
             catch (Exception e)
             {
-                Log($"[LoadBackupFromURL - FATAL] An error occured: {e.Message}");
+                Log($"[LoadBackupFromURL - FATAL] Request failed: {e.GetType().Name}");
                 return;
             }
         }
