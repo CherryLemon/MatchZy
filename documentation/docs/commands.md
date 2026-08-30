@@ -13,6 +13,7 @@ Most of the commands can also be used using ! prefix instead of . (like !ready)
 - `.tac` Starts a tactical timeout
 - `.coach <side>` Starts coaching the specified side. Example: `.coach t` to start coaching terrorist side!
 - `.uncoach` Leaves coaching slot
+- `.drop` Natively drops your owned knife at your current position for a living teammate to pick up during warmup or round freeze time (Alias: `.d`; 3-second cooldown). The original weapon entity is transferred, so its knife type and finish remain intact without creating inventory-item copies. Local fill-bot test matches also treat living bots as eligible teammates, while bots cannot invoke the command. It is disabled once the round goes live. Dropping the last remaining primary, secondary, or knife—through `.drop` or the normal G key—is blocked so those three slots cannot all become empty.
 
 # Practice Mode Commands
 

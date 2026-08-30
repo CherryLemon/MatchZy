@@ -7,6 +7,15 @@
     "matchzy.knife.decidedtostay": "{green}{0}{default} 决定保留阵营。",
     "matchzy.knife.decidedtoswitch": "{green}{0}{default} 决定更换阵营。",
 
+    "matchzy.drop.invalidplayer": "只有存活的 T/CT 玩家可以使用 .drop。",
+    "matchzy.drop.cooldown": "请等待 {0} 秒后再次使用 .drop。",
+    "matchzy.drop.noknife": "未找到您当前携带的刀。",
+    "matchzy.drop.noteammates": "当前没有可接收刀的存活队友。",
+    "matchzy.drop.failed": "丢刀失败，请稍后重试。",
+    "matchzy.drop.success": "已丢出您实际持有的刀，可由队友拾取。",
+    "matchzy.drop.requiresweapon": "这是主武器、副武器和刀中的最后一把，不能丢弃。",
+    "matchzy.drop.roundstarted": "回合已正式开始，当前不能发刀。",
+
     "matchzy.pause.pausedthematch": "{green}{0}{default} 暂停了比赛。输入 .unpause 来解除暂停",
     "matchzy.pause.teamsunpausedthematch": "双方均同意解除暂停, 比赛正在恢复！",
     "matchzy.pause.teamwantstounpause": "{green}{0}{default} 想要解除暂停。 {green}{1}{default}, 请输入 !unpause 来确定。",

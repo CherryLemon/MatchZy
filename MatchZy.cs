@@ -124,6 +124,8 @@ namespace MatchZy
                 { ".stay", OnTeamStay },
                 { ".switch", OnTeamSwitch },
                 { ".swap", OnTeamSwitch },
+                { ".drop", OnDropKnifeCommand },
+                { ".d", OnDropKnifeCommand },
                 { ".tech", OnTechCommand },
                 { ".p", OnPauseCommand },
                 { ".pause", OnPauseCommand },
@@ -270,6 +272,7 @@ namespace MatchZy
                 return HookResult.Continue;
             });
 
+            AddCommandListener("drop", OnDropWeaponCommand);
             AddCommandListener("noclip", OnConsoleNoClip); // Override noclip
 
             RegisterEventHandler<EventRoundEnd>((@event, info) => 

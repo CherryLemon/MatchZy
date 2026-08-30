@@ -6,6 +6,15 @@
     "matchzy.knife.sidedecisionpending": "{green}{0}{default} hat die Messerrunde gewonnen. Es wird darauf gewartet, dass sie {green}.stay{default} oder {green}.switch{default} in den Chat schreiben.",
     "matchzy.knife.decidedtostay": "{green}{0}{default} hat sich entschieden, auf der Seite zu bleiben.",
     "matchzy.knife.decidedtoswitch": "{green}{0}{default} hat sich entscheiden, die Seite zu wechseln.",
+
+    "matchzy.drop.invalidplayer": "Only living T/CT players can use .drop.",
+    "matchzy.drop.cooldown": "Please wait {0} second(s) before using .drop again.",
+    "matchzy.drop.noknife": "Your current knife could not be found.",
+    "matchzy.drop.noteammates": "No living teammates are available to receive your knife.",
+    "matchzy.drop.failed": "Failed to drop your knife.",
+    "matchzy.drop.success": "Dropped your owned knife for a teammate to pick up.",
+    "matchzy.drop.requiresweapon": "You cannot drop your last primary, secondary, or knife.",
+    "matchzy.drop.roundstarted": "Knife sharing is disabled after the round goes live.",
   
     "matchzy.pause.pausedthematch": "{green}{0}{default} hat das Match pausiert. Schreibe .unpause um das Match fortzusetzen.",
     "matchzy.pause.teamsunpausedthematch": "Beide Teams haben die Pause beendet, das Match geht weiter!",
