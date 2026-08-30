@@ -1,5 +1,6 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Modules.Entities.Constants;
 
 
 namespace MatchZy
@@ -45,6 +46,8 @@ namespace MatchZy
         private Dictionary<ulong, int> _oneV4Wins = new();
         private Dictionary<ulong, int> _oneV5Count = new();
         private Dictionary<ulong, int> _oneV5Wins = new();
+        private Dictionary<ulong, SidePlayerStatsAccumulator> _tSideStats = new();
+        private Dictionary<ulong, SidePlayerStatsAccumulator> _ctSideStats = new();
         private int _lastExtendedRoundProcessed = -1;
         private int? _roundBombPlantedUserId;
         private int? _roundBombDefusedUserId;
@@ -76,6 +79,23 @@ namespace MatchZy
             public int OneV5Wins { get; init; }
         }
 
+        private sealed class SidePlayerStatsAccumulator
+        {
+            public int Kills { get; set; }
+            public int Deaths { get; set; }
+            public int Assists { get; set; }
+            public int Damage { get; set; }
+            public int SniperKills { get; set; }
+            public int HeadshotKills { get; set; }
+            public int RoundsPlayed { get; set; }
+            public int FirstKills { get; set; }
+            public int FirstDeaths { get; set; }
+            public int KastRounds { get; set; }
+            public float RwsTotal { get; set; }
+            public int[] ClutchCounts { get; set; } = new int[6];
+            public int[] ClutchWins { get; set; } = new int[6];
+        }
+
         /// <summary>Clear all accumulated stats — call when a match starts or resets.</summary>
         public void InitExtendedStats()
         {
@@ -102,6 +122,8 @@ namespace MatchZy
             _oneV4Wins.Clear();
             _oneV5Count.Clear();
             _oneV5Wins.Clear();
+            _tSideStats.Clear();
+            _ctSideStats.Clear();
             _lastExtendedRoundProcessed = -1;
             ResetRoundExtendedStats();
         }
@@ -130,12 +152,12 @@ namespace MatchZy
             RegisterClutchAttemptIfNeeded(3);
         }
 
-        public void ProcessRoundEndExtendedStatsIfNeeded(int winnerTeamNum, int roundNumber)
+        public void ProcessRoundEndExtendedStatsIfNeeded(int winnerTeamNum, int roundNumber, int? roundEndReason = null)
         {
             if (roundNumber <= _lastExtendedRoundProcessed)
                 return;
 
-            ProcessRoundEndExtendedStats(winnerTeamNum);
+            ProcessRoundEndExtendedStats(winnerTeamNum, roundEndReason);
             _lastExtendedRoundProcessed = roundNumber;
         }
 
@@ -172,12 +194,24 @@ namespace MatchZy
             int attackerId = -1;
             bool isEnemyKill = IsPlayerValid(attacker) && attacker!.UserId.HasValue && attacker != victim && attacker.TeamNum != victim.TeamNum;
 
+            if (victim.TeamNum == 2 || victim.TeamNum == 3)
+            {
+                GetSideStatsAccumulator(victim.SteamID, victim.TeamNum).Deaths++;
+            }
+
             if (IsPlayerValid(attacker) && attacker!.UserId.HasValue)
             {
                 attackerId = (int)attacker.UserId;
 
                 if (isEnemyKill)
                 {
+                    SidePlayerStatsAccumulator attackerSideStats = GetSideStatsAccumulator(attacker.SteamID, attacker.TeamNum);
+                    attackerSideStats.Kills++;
+                    if (@event.Headshot)
+                    {
+                        attackerSideStats.HeadshotKills++;
+                    }
+
                     _roundKillCount.TryGetValue(attackerId, out int kc);
                     _roundKillCount[attackerId] = kc + 1;
 
@@ -186,11 +220,14 @@ namespace MatchZy
                         _roundFirstKillProcessed = true;
                         IncrementSideStat(attacker.SteamID, attacker.TeamNum, _firstKillsT, _firstKillsCt);
                         IncrementSideStat(victim.SteamID, victim.TeamNum, _firstDeathsT, _firstDeathsCt);
+                        attackerSideStats.FirstKills++;
+                        GetSideStatsAccumulator(victim.SteamID, victim.TeamNum).FirstDeaths++;
                     }
 
                     if (IsSniperWeapon(@event.Weapon))
                     {
                         IncrementStat(_sniperKills, attacker.SteamID);
+                        attackerSideStats.SniperKills++;
                     }
 
                     // Flash assist: victim was blinded by a teammate of the attacker
@@ -226,6 +263,10 @@ namespace MatchZy
             if (IsPlayerValid(assister) && assister!.UserId.HasValue)
             {
                 _roundAssisted[(int)assister.UserId] = true;
+                if (assister != victim && assister.TeamNum != victim.TeamNum)
+                {
+                    GetSideStatsAccumulator(assister.SteamID, assister.TeamNum).Assists++;
+                }
             }
 
             RemoveAlivePlayer(victimId, victim.TeamNum);
@@ -242,6 +283,11 @@ namespace MatchZy
             if (!isMatchLive) return;
             _roundEnemyDamage.TryGetValue(attackerUserId, out int d);
             _roundEnemyDamage[attackerUserId] = d + damage;
+            var attacker = FindTrackedPlayerByUserId(attackerUserId);
+            if (IsPlayerValid(attacker) && (attacker!.TeamNum == 2 || attacker.TeamNum == 3))
+            {
+                GetSideStatsAccumulator(attacker.SteamID, attacker.TeamNum).Damage += damage;
+            }
         }
 
         /// <summary>Call from EventPlayerBlind when isMatchLive.</summary>
@@ -273,7 +319,7 @@ namespace MatchZy
         /// Call at end of each live round (from HandlePostRoundEndEvent), BEFORE ResetRoundExtendedStats.
         /// winnerTeamNum is 2 (T) or 3 (CT).
         /// </summary>
-        public void ProcessRoundEndExtendedStats(int winnerTeamNum)
+        public void ProcessRoundEndExtendedStats(int winnerTeamNum, int? roundEndReason)
         {
             try
             {
@@ -281,18 +327,21 @@ namespace MatchZy
                 foreach (var death in _roundDeathLog)
                     deadPlayerIds.Add(death.victimId);
 
-                int totalRoundDamage = 0;
-                foreach (int damage in _roundEnemyDamage.Values)
-                    totalRoundDamage += damage;
+                Dictionary<int, int> winningPlayerDamage = playerData
+                    .Where(item => item.Value.IsValid && item.Value.TeamNum == winnerTeamNum)
+                    .ToDictionary(
+                        item => item.Key,
+                        item => _roundEnemyDamage.GetValueOrDefault(item.Key, 0));
 
-                int? objectiveBonusUserId = winnerTeamNum switch
+                int? objectiveBonusUserId = (winnerTeamNum, roundEndReason) switch
                 {
-                    2 => _roundBombPlantedUserId,
-                    3 => _roundBombDefusedUserId,
+                    (2, (int)RoundEndReason.TargetBombed) => _roundBombPlantedUserId,
+                    (3, (int)RoundEndReason.BombDefused) => _roundBombDefusedUserId,
                     _ => null,
                 };
-
-                float damageSharePool = objectiveBonusUserId.HasValue ? 70f : 100f;
+                Dictionary<int, float> rwsShares = RwsCalculator.CalculateRoundShares(
+                    winningPlayerDamage,
+                    objectiveBonusUserId);
 
                 // Determine traded players: a dead player whose killer was killed by the dead player's
                 // teammate within 5s. This is also the T in KAST.
@@ -345,6 +394,8 @@ namespace MatchZy
                     if (player.TeamNum != 2 && player.TeamNum != 3) continue;
 
                     ulong steamId = player.SteamID;
+                    SidePlayerStatsAccumulator sideStats = GetSideStatsAccumulator(steamId, player.TeamNum);
+                    sideStats.RoundsPlayed++;
 
                     // ---- KAST ----
                     bool k = _roundKillCount.ContainsKey(userId) && _roundKillCount[userId] > 0;
@@ -355,6 +406,7 @@ namespace MatchZy
                     if (k || a || s || t)
                     {
                         IncrementStat(_kastRounds, steamId);
+                        sideStats.KastRounds++;
                     }
 
                     // ---- 1k ----
@@ -366,14 +418,11 @@ namespace MatchZy
                     // ---- RWS ----
                     if (player.TeamNum == winnerTeamNum)
                     {
-                        int playerDamage = _roundEnemyDamage.GetValueOrDefault(userId, 0);
-                        float rwsShare = totalRoundDamage > 0 ? (float)playerDamage / totalRoundDamage * damageSharePool : 0f;
-
-                        if (objectiveBonusUserId.HasValue && objectiveBonusUserId.Value == userId)
-                            rwsShare += 30f;
+                        float rwsShare = rwsShares.GetValueOrDefault(userId, 0f);
 
                         _rwsTotal.TryGetValue(steamId, out float rwsAcc);
                         _rwsTotal[steamId] = rwsAcc + rwsShare;
+                        sideStats.RwsTotal += rwsShare;
                     }
                 }
 
@@ -387,7 +436,7 @@ namespace MatchZy
                         continue;
 
                     // A clutch is successful as long as the player's team wins the round.
-                    IncrementClutchStat(clutchAttempt.opponents, player.SteamID, isWin: true);
+                    IncrementClutchStat(clutchAttempt.opponents, player.SteamID, player.TeamNum, isWin: true);
                 }
             }
             catch (Exception e)
@@ -446,6 +495,41 @@ namespace MatchZy
             };
         }
 
+        private PlayerSideStats GetSideStatsForPlayer(ulong steamId, int teamNum)
+        {
+            Dictionary<ulong, SidePlayerStatsAccumulator> source = teamNum == 2 ? _tSideStats : _ctSideStats;
+            SidePlayerStatsAccumulator stats = source.GetValueOrDefault(steamId) ?? new SidePlayerStatsAccumulator();
+            int kast = stats.RoundsPlayed > 0
+                ? (int)Math.Round(100.0 * stats.KastRounds / stats.RoundsPlayed)
+                : 0;
+            float rws = stats.RoundsPlayed > 0 ? stats.RwsTotal / stats.RoundsPlayed : 0f;
+
+            return new PlayerSideStats
+            {
+                Kills = stats.Kills,
+                Deaths = stats.Deaths,
+                Assists = stats.Assists,
+                Damage = stats.Damage,
+                SniperKills = stats.SniperKills,
+                HeadshotKills = stats.HeadshotKills,
+                RoundsPlayed = stats.RoundsPlayed,
+                FirstKills = stats.FirstKills,
+                FirstDeaths = stats.FirstDeaths,
+                OneV1s = stats.ClutchWins[1],
+                OneV1Count = stats.ClutchCounts[1],
+                OneV2s = stats.ClutchWins[2],
+                OneV2Count = stats.ClutchCounts[2],
+                OneV3s = stats.ClutchWins[3],
+                OneV3Count = stats.ClutchCounts[3],
+                OneV4s = stats.ClutchWins[4],
+                OneV4Count = stats.ClutchCounts[4],
+                OneV5s = stats.ClutchWins[5],
+                OneV5Count = stats.ClutchCounts[5],
+                Kast = kast,
+                Rws = (float)Math.Round(rws, 2),
+            };
+        }
+
         private void RemoveAlivePlayer(int userId, int teamNum)
         {
             if (teamNum == 2)
@@ -479,7 +563,7 @@ namespace MatchZy
                 return;
 
             _roundClutchAttempts[teamNum] = (playerUserId, opponents);
-            IncrementClutchStat(opponents, player.SteamID, isWin: false);
+            IncrementClutchStat(opponents, player.SteamID, player.TeamNum, isWin: false);
         }
 
         private IEnumerable<CCSPlayerController> GetLivePlayersForRoundState()
@@ -513,7 +597,7 @@ namespace MatchZy
             return null;
         }
 
-        private void IncrementClutchStat(int opponents, ulong steamId, bool isWin)
+        private void IncrementClutchStat(int opponents, ulong steamId, int teamNum, bool isWin)
         {
             Dictionary<ulong, int> target = opponents switch
             {
@@ -526,6 +610,26 @@ namespace MatchZy
             };
 
             IncrementStat(target, steamId);
+            SidePlayerStatsAccumulator sideStats = GetSideStatsAccumulator(steamId, teamNum);
+            if (isWin)
+            {
+                sideStats.ClutchWins[opponents]++;
+            }
+            else
+            {
+                sideStats.ClutchCounts[opponents]++;
+            }
+        }
+
+        private SidePlayerStatsAccumulator GetSideStatsAccumulator(ulong steamId, int teamNum)
+        {
+            Dictionary<ulong, SidePlayerStatsAccumulator> target = teamNum == 2 ? _tSideStats : _ctSideStats;
+            if (!target.TryGetValue(steamId, out SidePlayerStatsAccumulator? stats))
+            {
+                stats = new SidePlayerStatsAccumulator();
+                target[steamId] = stats;
+            }
+            return stats;
         }
 
         private static void IncrementSideStat(ulong steamId, int teamNum, Dictionary<ulong, int> tStats, Dictionary<ulong, int> ctStats)
