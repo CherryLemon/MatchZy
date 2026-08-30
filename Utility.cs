@@ -1160,7 +1160,7 @@ namespace MatchZy
                     int roundNumber = GetRoundNumer();
 
                     // Process extended stats before serializing round_end payloads so KAST/RWS stay current.
-                    ProcessRoundEndExtendedStatsIfNeeded(@event.Winner, roundNumber);
+                    ProcessRoundEndExtendedStatsIfNeeded(@event.Winner, roundNumber, @event.Reason);
 
                     (Dictionary<ulong, Dictionary<string, object>> playerStatsDictionary, List<StatsPlayer> playerStatsListTeam1, List<StatsPlayer> playerStatsListTeam2) = GetPlayerStatsDict();
 
@@ -1838,6 +1838,8 @@ namespace MatchZy
                         Score = player.Score,
                         Mvps = player.MVPs,
                         Rws = (float)Math.Round(extendedStats.Rws, 2),
+                        TStats = GetSideStatsForPlayer(steamid64, 2),
+                        CTStats = GetSideStatsForPlayer(steamid64, 3),
                     };
 
                     StatsPlayer statsPlayer = new()

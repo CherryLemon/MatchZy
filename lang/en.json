@@ -43,6 +43,7 @@
   "matchzy.backup.restorematchended": "You cannot use this command after the game has ended.",
   "matchzy.backup.restoretacticaltimeout": "You cannot use this command when tactical timeout is active.",
   "matchzy.backup.restoredoesntexist": "Backup file {0} does not exist, please make sure you are restoring a valid backup.",
+  "matchzy.backup.restorestatssnapshotmissing": "This backup has no compatible statistics snapshot and cannot be restored across rounds.",
 
   "matchzy.cvars.invalidvalue": "Invalid value for matchzy_chat_messages_timer_delay. Please specify a valid non-negative number.",
 

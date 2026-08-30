@@ -244,6 +244,7 @@ namespace MatchZy
             // Server.ExecuteCommand($"mp_backup_restore_load_file {fileName}");
 
             Dictionary<string, string> backupData = new();
+            ExtendedStatsBackupSnapshot? extendedStatsBackup = null;
             try
             {
                 using (StreamReader fileReader = File.OpenText(filePath))
@@ -262,6 +263,15 @@ namespace MatchZy
                         // Handle the case where the JSON content is empty or null
                         backupData = new();
                     }
+                }
+
+                if (!backupData.TryGetValue("round", out string? restoredRoundValue) ||
+                    !int.TryParse(restoredRoundValue, out int restoredRoundNumber) ||
+                    !TryReadExtendedStatsBackup(backupData, restoredRoundNumber, out extendedStatsBackup))
+                {
+                    ReplyToUserCommand(player, Localizer["matchzy.backup.restorestatssnapshotmissing"]);
+                    Log($"[RestoreRoundBackup FATAL] Extended stats backup is missing or incompatible. File: {filePath}");
+                    return;
                 }
 
                 isRoundRestoring = true;
@@ -364,6 +374,7 @@ namespace MatchZy
                         Log($"Game was in warmup, setting up Live!");
                         SetupLiveFlagsAndCfg();
                     }
+                    ApplyExtendedStatsBackup(extendedStatsBackup);
                     AddTimer(restoreTimer, () => {
                         string fileName = Path.GetFileName(tempFilePath);
 
@@ -441,6 +452,7 @@ namespace MatchZy
                         { "CTTimeOuts", gameRules.CTTimeOuts.ToString() },
                         { "match_loaded", isMatchSetup.ToString() },
                         { "match_config", GetMatchConfig() },
+                        { "extended_stats", SerializeExtendedStatsBackup() },
                         { "valve_backup", valveBackupContent }
                     };
                 JsonSerializerOptions options = new()

@@ -28,6 +28,72 @@ public class StatsPlayer
     public required PlayerStats Stats { get; init; }
 }
 
+public class PlayerSideStats
+{
+    [JsonPropertyName("kills")]
+    public int Kills { get; set; }
+
+    [JsonPropertyName("deaths")]
+    public int Deaths { get; set; }
+
+    [JsonPropertyName("assists")]
+    public int Assists { get; set; }
+
+    [JsonPropertyName("damage")]
+    public int Damage { get; set; }
+
+    [JsonPropertyName("sniper_kills")]
+    public int SniperKills { get; set; }
+
+    [JsonPropertyName("headshot_kills")]
+    public int HeadshotKills { get; set; }
+
+    [JsonPropertyName("rounds_played")]
+    public int RoundsPlayed { get; set; }
+
+    [JsonPropertyName("first_kills")]
+    public int FirstKills { get; set; }
+
+    [JsonPropertyName("first_deaths")]
+    public int FirstDeaths { get; set; }
+
+    [JsonPropertyName("1v1")]
+    public int OneV1s { get; set; }
+
+    [JsonPropertyName("1v1_count")]
+    public int OneV1Count { get; set; }
+
+    [JsonPropertyName("1v2")]
+    public int OneV2s { get; set; }
+
+    [JsonPropertyName("1v2_count")]
+    public int OneV2Count { get; set; }
+
+    [JsonPropertyName("1v3")]
+    public int OneV3s { get; set; }
+
+    [JsonPropertyName("1v3_count")]
+    public int OneV3Count { get; set; }
+
+    [JsonPropertyName("1v4")]
+    public int OneV4s { get; set; }
+
+    [JsonPropertyName("1v4_count")]
+    public int OneV4Count { get; set; }
+
+    [JsonPropertyName("1v5")]
+    public int OneV5s { get; set; }
+
+    [JsonPropertyName("1v5_count")]
+    public int OneV5Count { get; set; }
+
+    [JsonPropertyName("kast")]
+    public int Kast { get; set; }
+
+    [JsonPropertyName("rws")]
+    public float Rws { get; set; }
+}
+
 // Referred from PugSharp
 public class PlayerStats
 {
@@ -153,6 +219,12 @@ public class PlayerStats
 
     [JsonPropertyName("mvp")]
     public int Mvps { get; set; }
+
+    [JsonPropertyName("t_stats")]
+    public PlayerSideStats? TStats { get; set; }
+
+    [JsonPropertyName("ct_stats")]
+    public PlayerSideStats? CTStats { get; set; }
 }
 
 public class MatchZyTeamWrapper

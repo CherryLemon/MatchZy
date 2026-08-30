@@ -587,6 +587,37 @@ components:
           minimum: 0
           description: "The number of times the player was elected the round MVP."
           example: 4
+        t_stats:
+          description: "THUCS extension: player statistics accumulated only while playing T."
+          $ref: "#/components/schemas/PlayerSideStats"
+        ct_stats:
+          description: "THUCS extension: player statistics accumulated only while playing CT."
+          $ref: "#/components/schemas/PlayerSideStats"
+    PlayerSideStats:
+      type: object
+      description: "Per-side player totals emitted by the THUCS MatchZy build."
+      properties:
+        kills: { type: integer, minimum: 0 }
+        deaths: { type: integer, minimum: 0 }
+        assists: { type: integer, minimum: 0 }
+        damage: { type: integer, minimum: 0 }
+        sniper_kills: { type: integer, minimum: 0 }
+        headshot_kills: { type: integer, minimum: 0 }
+        rounds_played: { type: integer, minimum: 0 }
+        first_kills: { type: integer, minimum: 0 }
+        first_deaths: { type: integer, minimum: 0 }
+        1v1: { type: integer, minimum: 0 }
+        1v1_count: { type: integer, minimum: 0 }
+        1v2: { type: integer, minimum: 0 }
+        1v2_count: { type: integer, minimum: 0 }
+        1v3: { type: integer, minimum: 0 }
+        1v3_count: { type: integer, minimum: 0 }
+        1v4: { type: integer, minimum: 0 }
+        1v4_count: { type: integer, minimum: 0 }
+        1v5: { type: integer, minimum: 0 }
+        1v5_count: { type: integer, minimum: 0 }
+        kast: { type: integer, minimum: 0, maximum: 100 }
+        rws: { type: number, minimum: 0 }
     MatchZyDemoFileEvent:
       allOf:
         - "$ref": "#/components/schemas/MatchZyMapEvent"
