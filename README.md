@@ -41,7 +41,7 @@ MatchZy
 ThuCS Webhook
   ├─ 更新实时比分和比赛状态
   ├─ 结算积分与模式统计
-  └─ 等待 GOTV 尾部和 Demo 完成后释放实例
+  └─ 等待 GOTV 尾部和 Demo 完成（或等待超时）后释放实例
 ```
 
 平台数据库是房间和积分的权威来源，插件内的状态是当前游戏服务器的运行时状态。平台不会把观战者写入 MatchZy 的比赛 spectator 配置，因此观战者只通过 GOTV 获取画面，不会获得比赛服连接。
@@ -118,12 +118,14 @@ RWS 规则固定为每个有效回合总计 100 分，并且只发放给胜方�
 ### Demo、backup 和比赛收尾
 
 - 比赛进入 live 后自动录制 Demo；地图或系列结束时停止录制，并在收尾等待后上传 Demo。
-- GOTV 广播比实时游戏落后 `tv_delay`，因此 `tv_record` 会在 live 之后再等待 `tv_delay` 秒执行，Demo 从正式第一回合开始，不包含热身、刀局和选边阶段；`tv_delay=0` 时立即开录。回合恢复同样按此延迟重新开录。若某张图在 live 后不足 `tv_delay` 秒就结束（例如管理员强制结束），录制尚未开始，收尾时会跳过 `tv_stoprecord` 和上传，不会把上一张图的 Demo 当成本图重复上传。
+- GOTV 广播比实时游戏落后 `tv_delay`，因此 `tv_record` 会在 live 之后再等待 `tv_delay` 秒执行，Demo 从正式第一回合开始，不包含热身、刀局和选边阶段；`tv_delay=0` 时立即开录。回合恢复同样按此延迟重新开录。若某张图在 live 后不足 `tv_delay` 秒就结束（例如管理员强制结束，或从末尾回合恢复备份后很快分出胜负），延迟录制还没执行，但整段比赛仍在 GOTV 缓冲里：收尾会改为立即 `tv_record`，由随后的冲刷把缓冲回合写进 Demo，因此这类地图同样产出 Demo，平台也不会空等一个永远不会到来的上传。上一张图的 Demo 不会被当成本图重复上传。
 - Demo 默认保存到 `csgo/MatchZy/`，文件名包含时间、比赛 ID、地图和双方队名。
 - 可通过 `matchzy_demo_upload_url` 和自定义 header 将 Demo 上传到 ThuCS；成功或失败都会发送 `demo_upload_ended` 事件。
+- 上传优先走直传：插件先 POST `{matchzy_demo_upload_url}/presign` 领取预签名 URL，`PUT` 到对象存储后再 POST `{matchzy_demo_upload_url}/complete` 确认，Demo 不经过平台 API。后端回 `mode=proxy`、接口不存在、签名过期或 PUT 失败时，自动回退到原来的 `POST {matchzy_demo_upload_url}`，因此老后端也能正常工作。
+- 上传使用流式请求体，不会把整份 Demo 读进游戏服进程内存。
 - 逐回合 backup 保存在 `csgo/MatchZyDataBackup/`，同时可通过 `matchzy_remote_backup_url` 上传；backup 包含比赛状态、cvar、Valve 原始备份和扩展统计快照。
 - `css_restore` / `.restore` 只允许具备相应管理员权限的操作；`.stop` 是否可用由 `matchzy_stop_command_available` 控制。
-- `series_end` 后插件进入收尾/锁定状态，并广播倒计时；平台仍会等待 GOTV 延迟耗尽和 Demo 上传完成，再回收或复用游戏实例。
+- `series_end` 后插件进入收尾/锁定状态，并广播倒计时；平台仍会等待 GOTV 延迟耗尽和 Demo 上传完成，再回收或复用游戏实例。该等待有上限（默认 15 分钟），超时后平台按“本场无 Demo”告警并释放实例，不会让一次上传失败卡死实例池。
 - 比赛配置 `cvars` 中的 `tv_*` 只在加载配置时执行一次：live 时的重新执行和 `series_end` 时的回滚都会跳过它们，避免在 GOTV 仍在播出延迟画面时重建广播缓冲、把观战者以“客户端增量标记故障”踢下线。GOTV 参数由平台在开服准备阶段用 RCON 下发。
 
 ## 与 ThuCS 后端的回调
@@ -250,3 +252,5 @@ ThuCS 定制版保留上游 MatchZy 的 MIT 许可证和基于以下项目的实
 - AlliedModders 及 CS2 社区
 
 具体上游实践模式、管理员权限和通用命令说明，请参阅仓库内的 [`documentation/docs/`](documentation/docs/index.md)。
+
+Demo 直传协议沿用 MatchZy 零基地图序号：首张图 `map_number=0`（允许 0–63）。游戏服控制请求超时 30 秒、COS PUT 超时 10 分钟，失败后在平台 15 分钟收尾窗口内尝试代理上传；上传凭据按本次任务固定，日志不得包含预签名 URL 或 COS 错误响应中的签名信息。

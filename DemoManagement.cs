@@ -6,6 +6,7 @@ using CounterStrikeSharp.API.Modules.Cvars;
 using System.IO.Compression;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 
 namespace MatchZy
 {
@@ -116,9 +117,20 @@ namespace MatchZy
         public void StopDemoRecording(float delay, string demoFile, long liveMatchId, int currentMapNumber)
         {
             // A map that ended within tv_delay of going live never reached its
-            // pending tv_record, so there is nothing to stop here. Dropping the
-            // stale activeDemoFile also stops the previous map's demo from being
-            // uploaded a second time under this map number.
+            // pending tv_record -- but everything it played is still sitting in
+            // the GOTV buffer, so we start recording now and let the flush below
+            // drain those rounds into the demo. Without this the map produces no
+            // demo at all, and the backend keeps its instance attached waiting
+            // for an upload that can never arrive.
+            if (demoStartTimer != null && !isDemoRecording)
+            {
+                CancelPendingDemoRecording();
+                Log("[StopDemoRecording] Map ended before the delayed recording started, recording the buffered GOTV broadcast instead.");
+                StartDemoRecording();
+                demoFile = activeDemoFile;
+            }
+            // Dropping the stale activeDemoFile stops the previous map's demo
+            // from being uploaded a second time under this map number.
             CancelPendingDemoRecording();
             if (!isDemoRecording || demoFile == "")
             {
@@ -142,10 +154,117 @@ namespace MatchZy
                 {
                     Task.Run(async () =>
                     {
-                        await UploadFileAsync(demoPath, demoUploadURL, demoUploadHeaderKey, demoUploadHeaderValue, liveMatchId, currentMapNumber, roundNumber);
+                        await UploadDemoAsync(demoPath, liveMatchId, currentMapNumber, roundNumber);
                     });
                 });
             });
+        }
+
+        /// <summary>
+        /// Uploads a finished demo, preferring a direct upload to ThuCS object storage.
+        /// The backend hands out a short-lived presigned URL, so a multi-hundred-MB demo
+        /// never has to travel through the API process. Anything that goes wrong on that
+        /// path -- an old backend, object storage disabled, an expired signature -- falls
+        /// back to the legacy POST rather than losing the demo.
+        /// </summary>
+        public async Task UploadDemoAsync(string demoFilePath, long matchId, int mapNumber, int roundNumber)
+        {
+            string uploadApiUrl = demoUploadURL;
+            string uploadHeaderKey = demoUploadHeaderKey;
+            string uploadHeaderValue = demoUploadHeaderValue;
+            async Task UploadThroughApi()
+            {
+                await UploadFileAsync(demoFilePath, uploadApiUrl, uploadHeaderKey, uploadHeaderValue, matchId, mapNumber, roundNumber);
+            }
+
+            if (uploadApiUrl == "" || !File.Exists(demoFilePath))
+            {
+                await UploadThroughApi();
+                return;
+            }
+
+            try
+            {
+                string baseUrl = uploadApiUrl.TrimEnd('/');
+                using HttpClient apiClient = new() { Timeout = TimeSpan.FromSeconds(30) };
+                if (!string.IsNullOrEmpty(uploadHeaderKey) && !string.IsNullOrEmpty(uploadHeaderValue))
+                {
+                    apiClient.DefaultRequestHeaders.Add(uploadHeaderKey, uploadHeaderValue);
+                }
+
+                using HttpResponseMessage ticketResponse = await apiClient.PostAsJsonAsync(
+                    $"{baseUrl}/presign", new { map_number = mapNumber });
+                if (!ticketResponse.IsSuccessStatusCode)
+                {
+                    Log($"[UploadDemoAsync] Upload ticket request failed ({ticketResponse.StatusCode}), uploading through the API instead.");
+                    await UploadThroughApi();
+                    return;
+                }
+
+                using JsonDocument ticket = JsonDocument.Parse(await ticketResponse.Content.ReadAsStringAsync());
+                JsonElement root = ticket.RootElement;
+                string mode = root.TryGetProperty("mode", out JsonElement modeValue) ? modeValue.GetString() ?? "" : "";
+                string uploadUrl = root.TryGetProperty("upload_url", out JsonElement urlValue) ? urlValue.GetString() ?? "" : "";
+                if (mode != "direct" || uploadUrl == "")
+                {
+                    Log($"[UploadDemoAsync] Backend asked for a proxied upload (mode: {mode}).");
+                    await UploadThroughApi();
+                    return;
+                }
+
+                long demoSize = new FileInfo(demoFilePath).Length;
+                long maxBytes = root.TryGetProperty("max_bytes", out JsonElement maxValue) && maxValue.TryGetInt64(out long parsedMax) ? parsedMax : 0;
+                if (maxBytes > 0 && demoSize > maxBytes)
+                {
+                    // The presigned PUT cannot reject an oversized body itself, and
+                    // pushing it only to have the backend refuse it wastes the transfer.
+                    Log($"[UploadDemoAsync ERROR] Demo is {demoSize} bytes, over the {maxBytes} byte limit. Not uploading.");
+                    return;
+                }
+
+                Log($"[UploadDemoAsync] Uploading {demoSize} bytes directly to object storage for matchId: {matchId} mapNumber: {mapNumber}.");
+                bool stored;
+                // A separate client: the presigned URL carries its own signature and
+                // must not be sent with our match credential attached.
+                // Finish the direct attempt and its proxy fallback before the
+                // backend's 15-minute post-GOTV instance release deadline.
+                using (HttpClient storageClient = new() { Timeout = TimeSpan.FromMinutes(10) })
+                using (FileStream demoStream = File.OpenRead(demoFilePath))
+                using (StreamContent body = new(demoStream))
+                {
+                    body.Headers.Add("Content-Type", "application/octet-stream");
+                    using HttpResponseMessage putResponse = await storageClient.PutAsync(uploadUrl, body);
+                    stored = putResponse.IsSuccessStatusCode;
+                    if (!stored)
+                    {
+                        Log($"[UploadDemoAsync ERROR] Direct upload failed. Status code: {putResponse.StatusCode}");
+                    }
+                }
+                if (!stored)
+                {
+                    await UploadThroughApi();
+                    return;
+                }
+
+                using HttpResponseMessage completeResponse = await apiClient.PostAsJsonAsync(
+                    $"{baseUrl}/complete", new { map_number = mapNumber });
+                if (completeResponse.IsSuccessStatusCode)
+                {
+                    Log($"[UploadDemoAsync] Direct upload confirmed for matchId: {matchId} mapNumber: {mapNumber} roundNumber: {roundNumber}.");
+                    return;
+                }
+                // The bytes are in storage but the backend did not accept them, so the
+                // match still has no demo URL; the proxied path is the only way left.
+                Log($"[UploadDemoAsync ERROR] Backend rejected the uploaded demo ({completeResponse.StatusCode}).");
+                await UploadThroughApi();
+            }
+            catch (Exception e)
+            {
+                // Exception messages and COS error bodies may contain the
+                // signed URL. Keep credentials out of game-server logs.
+                Log($"[UploadDemoAsync FATAL] {e.GetType().Name}. Falling back to uploading through the API.");
+                await UploadThroughApi();
+            }
         }
 
         public int GetTvDelay()

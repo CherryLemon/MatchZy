@@ -2028,10 +2028,10 @@ namespace MatchZy
 
                 using FileStream fileStream = File.OpenRead(filePath);
 
-                byte[] fileContent = new byte[fileStream.Length];
-                await fileStream.ReadAsync(fileContent, 0, (int)fileStream.Length);
-
-                using ByteArrayContent content = new(fileContent);
+                // Stream the file instead of copying it into a byte[]: a demo is
+                // routinely hundreds of MB, and that allocation happened inside the
+                // game server process (the int cast also truncated past 2GB).
+                using StreamContent content = new(fileStream);
                 content.Headers.Add("Content-Type", "application/octet-stream");
 
                 content.Headers.Add("MatchZy-FileName", Path.GetFileName(filePath));
