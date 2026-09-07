@@ -379,7 +379,7 @@ namespace MatchZy
                         string fileName = Path.GetFileName(tempFilePath);
 
                         Server.ExecuteCommand($"mp_backup_restore_load_file {fileName}");
-                        StartDemoRecording();
+                        StartDemoRecordingAfterTvDelay();
                     });
                     // AddTimer(5, () => File.Delete(tempFilePath));
                 }

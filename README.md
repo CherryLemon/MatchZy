@@ -117,12 +117,14 @@ RWS 规则固定为每个有效回合总计 100 分，并且只发放给胜方�
 
 ### Demo、backup 和比赛收尾
 
-- 比赛进入 live 后自动执行 `tv_record`；地图或系列结束时停止录制，并在收尾等待后上传 Demo。
+- 比赛进入 live 后自动录制 Demo；地图或系列结束时停止录制，并在收尾等待后上传 Demo。
+- GOTV 广播比实时游戏落后 `tv_delay`，因此 `tv_record` 会在 live 之后再等待 `tv_delay` 秒执行，Demo 从正式第一回合开始，不包含热身、刀局和选边阶段；`tv_delay=0` 时立即开录。回合恢复同样按此延迟重新开录。若某张图在 live 后不足 `tv_delay` 秒就结束（例如管理员强制结束），录制尚未开始，收尾时会跳过 `tv_stoprecord` 和上传，不会把上一张图的 Demo 当成本图重复上传。
 - Demo 默认保存到 `csgo/MatchZy/`，文件名包含时间、比赛 ID、地图和双方队名。
 - 可通过 `matchzy_demo_upload_url` 和自定义 header 将 Demo 上传到 ThuCS；成功或失败都会发送 `demo_upload_ended` 事件。
 - 逐回合 backup 保存在 `csgo/MatchZyDataBackup/`，同时可通过 `matchzy_remote_backup_url` 上传；backup 包含比赛状态、cvar、Valve 原始备份和扩展统计快照。
 - `css_restore` / `.restore` 只允许具备相应管理员权限的操作；`.stop` 是否可用由 `matchzy_stop_command_available` 控制。
 - `series_end` 后插件进入收尾/锁定状态，并广播倒计时；平台仍会等待 GOTV 延迟耗尽和 Demo 上传完成，再回收或复用游戏实例。
+- 比赛配置 `cvars` 中的 `tv_*` 只在加载配置时执行一次：live 时的重新执行和 `series_end` 时的回滚都会跳过它们，避免在 GOTV 仍在播出延迟画面时重建广播缓冲、把观战者以“客户端增量标记故障”踢下线。GOTV 参数由平台在开服准备阶段用 RCON 下发。
 
 ## 与 ThuCS 后端的回调
 

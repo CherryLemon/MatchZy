@@ -399,7 +399,7 @@ namespace MatchZy
         private void StartLive()
         {
             SetupLiveFlagsAndCfg();
-            StartDemoRecording();
+            StartDemoRecordingAfterTvDelay();
 
             // Storing 0-0 score backup file as lastBackupFileName, so that .stop functions properly in first round.
             lastBackupFileName = $"matchzy_{liveMatchId}_{matchConfig.CurrentMapNumber}_round00.txt";
@@ -458,6 +458,7 @@ namespace MatchZy
             try
             {
                 // We stop demo recording if a live match was restarted
+                CancelPendingDemoRecording();
                 if (matchStarted && isDemoRecording)
                 {
                     Server.ExecuteCommand($"tv_stoprecord");
@@ -877,7 +878,6 @@ namespace MatchZy
             }
             else
             {
-                StartDemoRecording();
                 StartLive();
             }
             if (showCreditsOnMatchStart.Value)
@@ -1619,10 +1619,19 @@ namespace MatchZy
             }
         }
 
-        public void ExecuteChangedConvars()
+        public void ExecuteChangedConvars(bool includeGotvConvars = false)
         {
             foreach (string key in matchConfig.ChangedCvars.Keys)
             {
+                if (!includeGotvConvars && IsGotvConvarName(key))
+                {
+                    // GOTV serves its viewers from a tv_delay buffer. Re-execing a
+                    // tv_* convar rebuilds that buffer and drops everyone watching
+                    // with a delta tick failure, so only the initial config load -
+                    // before anybody can be spectating this match - applies them.
+                    Log($"[ExecuteChangedConvars] Skipping GOTV convar during a live broadcast: {key}");
+                    continue;
+                }
                 string value = matchConfig.ChangedCvars[key];
                 string loggedValue = IsSensitiveConvarName(key) ? "<redacted>" : value;
                 Log($"[ExecuteChangedConvars] Execing: {key} \"{loggedValue}\"");
@@ -1634,11 +1643,24 @@ namespace MatchZy
         {
             foreach (string key in matchConfig.OriginalCvars.Keys)
             {
+                if (IsGotvConvarName(key))
+                {
+                    // The series ends while GOTV is still broadcasting the last
+                    // tv_delay seconds of the match; restoring tv_* right now would
+                    // kick every spectator who is still watching that tail.
+                    Log($"[ResetChangedConvars] Skipping GOTV convar while the broadcast tail drains: {key}");
+                    continue;
+                }
                 string value = matchConfig.OriginalCvars[key];
                 string loggedValue = IsSensitiveConvarName(key) ? "<redacted>" : value;
                 Log($"[ResetChangedConvars] Execing: {key} \"{loggedValue}\"");
-                Server.ExecuteCommand($"{key} {value}");
+                Server.ExecuteCommand($"{key} \"{value}\"");
             }
+        }
+
+        private static bool IsGotvConvarName(string name)
+        {
+            return name.StartsWith("tv_", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsSensitiveConvarName(string name)

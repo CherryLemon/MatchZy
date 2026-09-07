@@ -413,8 +413,10 @@ namespace MatchZy
             ClearPostMatchShutdownState();
             readyAvailable = true;
 
-            // This is done before starting warmup so that cvars like get5_remote_log_url are set properly to send the events
-            ExecuteChangedConvars();
+            // This is done before starting warmup so that cvars like get5_remote_log_url are set properly to send the events.
+            // This is also the only moment where GOTV convars may be applied: no
+            // spectator can be attached to this match yet.
+            ExecuteChangedConvars(includeGotvConvars: true);
 
             StartWarmup();
 

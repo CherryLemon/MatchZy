@@ -22,6 +22,58 @@ namespace MatchZy
         public bool isDemoRecording = false;
         public bool isDemoRecordingEnabled = true;
 
+        public CounterStrikeSharp.API.Modules.Timers.Timer? demoStartTimer = null;
+
+        /// <summary>
+        /// Starts the demo recording at the moment the match goes live.
+        /// GOTV records its broadcast, which trails the game by tv_delay, so recording
+        /// immediately would put the last tv_delay seconds of warmup/knife round at the
+        /// head of the demo. We wait out the delay first, mirroring what HandleMatchEnd
+        /// already does when it stops the recording.
+        /// </summary>
+        public void StartDemoRecordingAfterTvDelay()
+        {
+            if (isDemoRecording)
+            {
+                Log("[StartDemoRecordingAfterTvDelay] Demo recording is already in progress.");
+                return;
+            }
+            CancelPendingDemoRecording();
+            if (!isDemoRecordingEnabled)
+            {
+                Log("[StartDemoRecordingAfterTvDelay] Demo recording is disabled.");
+                return;
+            }
+
+            int tvDelay = GetTvDelay();
+            if (tvDelay <= 0)
+            {
+                Log("[StartDemoRecordingAfterTvDelay] GOTV reports no broadcast delay, starting demo recording immediately.");
+                StartDemoRecording();
+                return;
+            }
+
+            long matchId = liveMatchId;
+            int mapNumber = matchConfig.CurrentMapNumber;
+            Log($"[StartDemoRecordingAfterTvDelay] GOTV broadcast is {tvDelay}s behind, starting demo recording in {tvDelay}s so that the demo begins at the first live round.");
+            demoStartTimer = AddTimer(tvDelay, () =>
+            {
+                demoStartTimer = null;
+                if (!isMatchLive || liveMatchId != matchId || matchConfig.CurrentMapNumber != mapNumber)
+                {
+                    Log($"[StartDemoRecordingAfterTvDelay] Match {matchId} (map {mapNumber}) is not live anymore, not starting demo recording.");
+                    return;
+                }
+                StartDemoRecording();
+            });
+        }
+
+        public void CancelPendingDemoRecording()
+        {
+            demoStartTimer?.Kill();
+            demoStartTimer = null;
+        }
+
         public void StartDemoRecording()
         {
             if (!isDemoRecordingEnabled)
@@ -61,10 +113,22 @@ namespace MatchZy
 
         }
 
-        public void StopDemoRecording(float delay, string activeDemoFile, long liveMatchId, int currentMapNumber)
+        public void StopDemoRecording(float delay, string demoFile, long liveMatchId, int currentMapNumber)
         {
+            // A map that ended within tv_delay of going live never reached its
+            // pending tv_record, so there is nothing to stop here. Dropping the
+            // stale activeDemoFile also stops the previous map's demo from being
+            // uploaded a second time under this map number.
+            CancelPendingDemoRecording();
+            if (!isDemoRecording || demoFile == "")
+            {
+                Log("[StopDemoRecording] No demo recording is active, nothing to stop or upload.");
+                activeDemoFile = "";
+                return;
+            }
             Log($"[StopDemoRecording] Going to stop demorecording in {delay}s");
-            string demoPath = Path.Join(Server.GameDirectory + "/csgo/", activeDemoFile);
+            string demoPath = Path.Join(Server.GameDirectory + "/csgo/", demoFile);
+            activeDemoFile = "";
             (int t1score, int t2score) = GetTeamsScore();
             int roundNumber = t1score + t2score;
             AddTimer(delay, () =>
