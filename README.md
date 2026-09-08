@@ -84,6 +84,7 @@ matchzy_loadmatch_url "https://backend.example/api/matches/123/matchzy-config" "
 ### 热身、准备和开赛
 
 - 热身配置默认启用无限弹药、任意地点购买、暂停热身计时器、关闭自动平衡，并保留较长的准备窗口。
+- 无限弹药由插件通过 ConVar API 设置并回读：热身为 1，刀局和正式比赛为 0；每回合再次校验，不依赖受作弊保护限制的 cfg 写入，也不需要开启 `sv_cheats`。
 - 热身重生后提供短暂的出生保护，减少玩家刚生成时被立即击杀的问题。
 - `.ready` / `.r`、`.unready` / `.ur` 管理准备状态；`.forceready` 供管理员在需要时推进准备阶段。
 - 本地 Docker 验收可以通过 `matchzy_local_fill_bots_on_first_connect` 在第一名真人连接后自动补 bot，方便单人验证 `.ready`、warmup 和 `get5_status`。正式平台比赛默认关闭该行为，不能把 bot 当作参赛者。

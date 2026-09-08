@@ -231,6 +231,7 @@ public partial class MatchZy
     {
         try
         {
+            ApplyPhaseAmmo();
             HandlePostRoundStartEvent(@event);
             return HookResult.Continue;
         }

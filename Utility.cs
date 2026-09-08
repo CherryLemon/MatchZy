@@ -292,8 +292,24 @@ namespace MatchZy
             }
         }
 
+        // sv_infinite_ammo is cheat protected in CS2: console/cfg writes can be
+        // ignored with sv_cheats=false. Set it through the server API instead.
+        private void ApplyPhaseAmmo()
+        {
+            if (isPractice || isSleep) return;
+            int expected = isWarmup ? 1 : 0;
+            var ammo = ConVar.Find("sv_infinite_ammo")
+                ?? throw new InvalidOperationException("sv_infinite_ammo is unavailable");
+            ammo.SetValue(expected);
+            int actual = ammo.GetPrimitiveValue<int>();
+            if (actual != expected)
+                throw new InvalidOperationException($"Phase ammo verification failed: expected {expected}, actual {actual}");
+            Log($"[PhaseAmmo] warmup={isWarmup} knife={isKnifeRound} live={isMatchLive} sv_infinite_ammo={actual}");
+        }
+
         private void ExecWarmupCfg()
         {
+            ApplyPhaseAmmo();
             var absolutePath = Path.Join(Server.GameDirectory + "/csgo/cfg", warmupCfgPath);
 
             if (File.Exists(Path.Join(Server.GameDirectory + "/csgo/cfg", warmupCfgPath)))
@@ -331,6 +347,7 @@ namespace MatchZy
             isKnifeRound = true;
             readyAvailable = false;
             isWarmup = false;
+            ApplyPhaseAmmo();
 
             var absolutePath = Path.Join(Server.GameDirectory + "/csgo/cfg", knifeCfgPath);
 
@@ -392,6 +409,7 @@ namespace MatchZy
             {
                 HandlePlayoutConfig();
                 ExecuteChangedConvars();
+                Server.NextFrame(ApplyPhaseAmmo);
             });
             AddTimer(0.5f, () => RestoreLocalFillBotsForMatchPhase("live"));
         }
@@ -1416,6 +1434,7 @@ namespace MatchZy
 
         private void ExecLiveCFG()
         {
+            ApplyPhaseAmmo();
             int gameMode = GetGameMode();
 
             var cfgPath = liveCfgPath;
