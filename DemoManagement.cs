@@ -75,6 +75,15 @@ namespace MatchZy
             demoStartTimer = null;
         }
 
+        public static string ResolveDemoFilePath(string gameDirectory, string directory, string fileName)
+        {
+            // Team/map names form part of the file name, never console syntax or
+            // a directory. Keep the configured directory separate from the name.
+            foreach (char character in Path.GetInvalidFileNameChars().Concat(new[] { '/', '\\', '"', ';', '\r', '\n' }))
+                fileName = fileName.Replace(character, '_');
+            return Path.GetFullPath(Path.Combine(directory, fileName), Path.Combine(gameDirectory, "csgo"));
+        }
+
         public void StartDemoRecording()
         {
             if (!isDemoRecordingEnabled)
@@ -90,25 +99,22 @@ namespace MatchZy
             string demoFileName = FormatCvarValue(demoNameFormat.Replace(" ", "_")) + ".dem";
             try
             {
-                string? directoryPath = Path.GetDirectoryName(Path.Join(Server.GameDirectory + "/csgo/", demoPath));
-                if (directoryPath != null)
-                {
-                    if (!Directory.Exists(directoryPath))
-                    {
-                        Directory.CreateDirectory(directoryPath);
-                    }
-                }
-                string tempDemoPath = demoPath == "" ? demoFileName : demoPath + demoFileName;
+                // Source 2's relative write search path may point at addons/metamod
+                // after an engine update. Recording and upload must share one
+                // absolute path, independent of that search path and process cwd.
+                string tempDemoPath = ResolveDemoFilePath(Server.GameDirectory, demoPath, demoFileName);
+                Directory.CreateDirectory(Path.GetDirectoryName(tempDemoPath)!);
                 activeDemoFile = tempDemoPath;
-                Log($"[StartDemoRecoding] Starting demo recording, path: {tempDemoPath}");
-                Server.ExecuteCommand($"tv_record {tempDemoPath}");
+                Log($"[StartDemoRecording] Starting demo recording, path: {tempDemoPath}");
+                Server.ExecuteCommand($"tv_record \"{tempDemoPath}\"");
                 isDemoRecording = true;
             }
             catch (Exception ex)
             {
                 Log($"[StartDemoRecording - FATAL] Error: {ex.Message}. Starting demo recording with path. Name: {demoFileName}");
                 // This is to avoid demo loss in any case of exception
-                Server.ExecuteCommand($"tv_record {demoFileName}");
+                activeDemoFile = ResolveDemoFilePath(Server.GameDirectory, "", demoFileName);
+                Server.ExecuteCommand($"tv_record \"{activeDemoFile}\"");
                 isDemoRecording = true;
             }
 
@@ -139,7 +145,7 @@ namespace MatchZy
                 return;
             }
             Log($"[StopDemoRecording] Going to stop demorecording in {delay}s");
-            string demoPath = Path.Join(Server.GameDirectory + "/csgo/", demoFile);
+            string demoPath = Path.GetFullPath(demoFile, Path.Combine(Server.GameDirectory, "csgo"));
             activeDemoFile = "";
             (int t1score, int t2score) = GetTeamsScore();
             int roundNumber = t1score + t2score;
